@@ -10,12 +10,12 @@ AI-powered coding assistant CLI. Works with local models (Ollama) or cloud provi
 
 **macOS / Linux:**
 ```bash
-pip install git+https://github.com/yourusername/code-agent.git
+pip3 install git+https://github.com/avirajbhatt99/codeagent.git
 ```
 
 **Windows:**
 ```powershell
-pip install git+https://github.com/yourusername/code-agent.git
+pip install git+https://github.com/avirajbhatt99/codeagent.git
 ```
 
 **With pipx (isolated environment):**
@@ -25,15 +25,15 @@ pip install git+https://github.com/yourusername/code-agent.git
 # Linux: sudo apt install pipx
 # Windows: pip install pipx
 
-pipx install git+https://github.com/yourusername/code-agent.git
+pipx install git+https://github.com/avirajbhatt99/codeagent.git
 ```
 
 ### Local Development Install
 
 ```bash
-git clone https://github.com/yourusername/code-agent.git
-cd code-agent
-pip install -e .
+git clone https://github.com/avirajbhatt99/codeagent.git
+cd codeagent
+pip3 install -e .
 ```
 
 ### Verify Installation
@@ -273,9 +273,9 @@ python -m codeagent
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/code-agent.git
-cd code-agent
-pip install -e ".[dev]"
+git clone https://github.com/avirajbhatt99/codeagent.git
+cd codeagent
+pip3 install -e ".[dev]"
 
 # Run tests
 pytest
