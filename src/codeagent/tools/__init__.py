@@ -23,6 +23,46 @@ from codeagent.tools.git import (
     GitBranchTool,
     GitCheckoutTool,
     GitInitTool,
+    # Extended git tools
+    GitStashTool,
+    GitPullTool,
+    GitPushTool,
+    GitResetTool,
+    GitMergeTool,
+    GitCloneTool,
+    GitRemoteTool,
+    GitTagTool,
+)
+from codeagent.tools.web import (
+    WebFetchTool,
+    HttpRequestTool,
+)
+from codeagent.tools.code_analysis import (
+    TreeTool,
+    FindSymbolTool,
+    CodeStatsTool,
+)
+from codeagent.tools.package_managers import (
+    # npm tools
+    NpmInstallTool,
+    NpmRunTool,
+    NpmListTool,
+    # pip tools
+    PipInstallTool,
+    PipListTool,
+    PipFreezeTool,
+    PipUninstallTool,
+    # cargo tools
+    CargoBuildTool,
+    CargoRunTool,
+    CargoTestTool,
+    CargoAddTool,
+)
+from codeagent.tools.env import (
+    EnvGetTool,
+    EnvSetTool,
+    EnvUnsetTool,
+    EnvLoadTool,
 )
 
 
@@ -47,7 +87,7 @@ def create_default_registry() -> ToolRegistry:
     # Shell
     registry.register(BashTool())
 
-    # Git tools
+    # Git tools (basic)
     registry.register(GitStatusTool())
     registry.register(GitDiffTool())
     registry.register(GitLogTool())
@@ -57,12 +97,57 @@ def create_default_registry() -> ToolRegistry:
     registry.register(GitCheckoutTool())
     registry.register(GitInitTool())
 
+    # Git tools (extended)
+    registry.register(GitStashTool())
+    registry.register(GitPullTool())
+    registry.register(GitPushTool())
+    registry.register(GitResetTool())
+    registry.register(GitMergeTool())
+    registry.register(GitCloneTool())
+    registry.register(GitRemoteTool())
+    registry.register(GitTagTool())
+
+    # Web tools
+    registry.register(WebFetchTool())
+    registry.register(HttpRequestTool())
+
+    # Code analysis tools
+    registry.register(TreeTool())
+    registry.register(FindSymbolTool())
+    registry.register(CodeStatsTool())
+
+    # Package manager tools - npm
+    registry.register(NpmInstallTool())
+    registry.register(NpmRunTool())
+    registry.register(NpmListTool())
+
+    # Package manager tools - pip
+    registry.register(PipInstallTool())
+    registry.register(PipListTool())
+    registry.register(PipFreezeTool())
+    registry.register(PipUninstallTool())
+
+    # Package manager tools - cargo
+    registry.register(CargoBuildTool())
+    registry.register(CargoRunTool())
+    registry.register(CargoTestTool())
+    registry.register(CargoAddTool())
+
+    # Environment variable tools
+    registry.register(EnvGetTool())
+    registry.register(EnvSetTool())
+    registry.register(EnvUnsetTool())
+    registry.register(EnvLoadTool())
+
     return registry
 
 
 __all__ = [
+    # Base
     "Tool",
     "ToolRegistry",
+    "create_default_registry",
+    # File tools
     "ReadFileTool",
     "WriteFileTool",
     "EditFileTool",
@@ -71,9 +156,11 @@ __all__ = [
     "MoveFileTool",
     "MkdirTool",
     "ListDirTool",
+    # Search tools
     "BashTool",
     "GrepTool",
     "GlobTool",
+    # Git tools (basic)
     "GitStatusTool",
     "GitDiffTool",
     "GitLogTool",
@@ -82,5 +169,39 @@ __all__ = [
     "GitBranchTool",
     "GitCheckoutTool",
     "GitInitTool",
-    "create_default_registry",
+    # Git tools (extended)
+    "GitStashTool",
+    "GitPullTool",
+    "GitPushTool",
+    "GitResetTool",
+    "GitMergeTool",
+    "GitCloneTool",
+    "GitRemoteTool",
+    "GitTagTool",
+    # Web tools
+    "WebFetchTool",
+    "HttpRequestTool",
+    # Code analysis tools
+    "TreeTool",
+    "FindSymbolTool",
+    "CodeStatsTool",
+    # Package manager tools - npm
+    "NpmInstallTool",
+    "NpmRunTool",
+    "NpmListTool",
+    # Package manager tools - pip
+    "PipInstallTool",
+    "PipListTool",
+    "PipFreezeTool",
+    "PipUninstallTool",
+    # Package manager tools - cargo
+    "CargoBuildTool",
+    "CargoRunTool",
+    "CargoTestTool",
+    "CargoAddTool",
+    # Environment variable tools
+    "EnvGetTool",
+    "EnvSetTool",
+    "EnvUnsetTool",
+    "EnvLoadTool",
 ]

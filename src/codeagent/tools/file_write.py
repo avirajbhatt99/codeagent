@@ -2,10 +2,20 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 from codeagent.core.exceptions import ToolExecutionError
 from codeagent.tools.base import Tool, ToolParameter
+
+
+# Global callback for diff display - set by CLI
+_diff_callback: Optional[Callable[[str, Optional[str], str], None]] = None
+
+
+def set_diff_callback(callback: Optional[Callable[[str, Optional[str], str], None]]) -> None:
+    """Set the callback for displaying diffs. Callback receives (file_path, old_content, new_content)."""
+    global _diff_callback
+    _diff_callback = callback
 
 
 class WriteFileTool(Tool):
@@ -82,6 +92,23 @@ class WriteFileTool(Tool):
 
         try:
             is_new = not path.exists()
+
+            # Read old content for diff display
+            old_content = None
+            if not is_new:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        old_content = f.read()
+                except Exception:
+                    pass
+
+            # Display diff if callback is set
+            if _diff_callback:
+                try:
+                    _diff_callback(str(path), old_content, content)
+                except Exception:
+                    pass  # Don't fail on diff display errors
+
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 

@@ -25,7 +25,9 @@ from codeagent.core.exceptions import (
 from codeagent.providers.factory import create_provider
 from codeagent.providers.base import LLMProvider
 from codeagent.tools import create_default_registry
-from codeagent.utils.console import Console as AgentConsole
+from codeagent.utils.console import Console as AgentConsole, diff_display
+from codeagent.tools.file_edit import set_diff_callback as set_edit_diff_callback
+from codeagent.tools.file_write import set_diff_callback as set_write_diff_callback
 
 
 # Initialize Typer app
@@ -360,6 +362,18 @@ def start_session(verbose: bool = False) -> None:
     tools = create_default_registry()
     working_dir = os.getcwd()
     agent_console = AgentConsole()
+
+    # Set up diff display callbacks for file operations
+    def on_edit_diff(file_path: str, old_content: str, new_content: str) -> None:
+        """Display diff for edit operations."""
+        diff_display.show_diff(file_path, old_content, new_content)
+
+    def on_write_diff(file_path: str, old_content: str | None, new_content: str) -> None:
+        """Display diff for write operations."""
+        diff_display.show_write_diff(file_path, new_content, old_content)
+
+    set_edit_diff_callback(on_edit_diff)
+    set_write_diff_callback(on_write_diff)
 
     agent = Agent(
         provider=provider,

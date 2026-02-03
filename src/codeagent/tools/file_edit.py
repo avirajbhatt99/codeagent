@@ -2,10 +2,20 @@
 
 import difflib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from codeagent.core.exceptions import ToolExecutionError
 from codeagent.tools.base import Tool, ToolParameter
+
+
+# Global callback for diff display - set by CLI
+_diff_callback: Optional[Callable[[str, str, str], None]] = None
+
+
+def set_diff_callback(callback: Optional[Callable[[str, str, str], None]]) -> None:
+    """Set the callback for displaying diffs. Callback receives (file_path, old_content, new_content)."""
+    global _diff_callback
+    _diff_callback = callback
 
 
 def _find_similar_lines(content: str, search: str, max_results: int = 3) -> list[str]:
@@ -180,6 +190,13 @@ class EditFileTool(Tool):
             new_content = content.replace(old_string, new_string)
         else:
             new_content = content.replace(old_string, new_string, 1)
+
+        # Display diff if callback is set
+        if _diff_callback:
+            try:
+                _diff_callback(str(path), content, new_content)
+            except Exception:
+                pass  # Don't fail on diff display errors
 
         # Write back
         try:
