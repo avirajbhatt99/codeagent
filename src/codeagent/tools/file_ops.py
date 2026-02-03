@@ -40,12 +40,16 @@ class DeleteFileTool(Tool):
             ),
         ]
 
-    def execute(self, path: str, recursive: bool = False, **kwargs: Any) -> str:
+    def execute(self, path: str, recursive: bool = False, working_dir: str | None = None, **kwargs: Any) -> str:
         """Delete a file or directory."""
         target = Path(path).expanduser()
 
+        # Resolve relative paths against working directory
         if not target.is_absolute():
-            raise ToolExecutionError(self.name, f"Path must be absolute: {path}")
+            if working_dir:
+                target = Path(working_dir) / target
+            else:
+                target = Path.cwd() / target
 
         if not target.exists():
             raise ToolExecutionError(self.name, f"Path does not exist: {path}")
@@ -104,15 +108,22 @@ class CopyFileTool(Tool):
             ),
         ]
 
-    def execute(self, source: str, destination: str, **kwargs: Any) -> str:
+    def execute(self, source: str, destination: str, working_dir: str | None = None, **kwargs: Any) -> str:
         """Copy a file or directory."""
         src = Path(source).expanduser()
         dst = Path(destination).expanduser()
 
+        # Resolve relative paths against working directory
         if not src.is_absolute():
-            raise ToolExecutionError(self.name, f"Source must be absolute: {source}")
+            if working_dir:
+                src = Path(working_dir) / src
+            else:
+                src = Path.cwd() / src
         if not dst.is_absolute():
-            raise ToolExecutionError(self.name, f"Destination must be absolute: {destination}")
+            if working_dir:
+                dst = Path(working_dir) / dst
+            else:
+                dst = Path.cwd() / dst
 
         if not src.exists():
             raise ToolExecutionError(self.name, f"Source does not exist: {source}")
@@ -164,15 +175,22 @@ class MoveFileTool(Tool):
             ),
         ]
 
-    def execute(self, source: str, destination: str, **kwargs: Any) -> str:
+    def execute(self, source: str, destination: str, working_dir: str | None = None, **kwargs: Any) -> str:
         """Move a file or directory."""
         src = Path(source).expanduser()
         dst = Path(destination).expanduser()
 
+        # Resolve relative paths against working directory
         if not src.is_absolute():
-            raise ToolExecutionError(self.name, f"Source must be absolute: {source}")
+            if working_dir:
+                src = Path(working_dir) / src
+            else:
+                src = Path.cwd() / src
         if not dst.is_absolute():
-            raise ToolExecutionError(self.name, f"Destination must be absolute: {destination}")
+            if working_dir:
+                dst = Path(working_dir) / dst
+            else:
+                dst = Path.cwd() / dst
 
         if not src.exists():
             raise ToolExecutionError(self.name, f"Source does not exist: {source}")
@@ -210,12 +228,16 @@ class MkdirTool(Tool):
             ),
         ]
 
-    def execute(self, path: str, **kwargs: Any) -> str:
+    def execute(self, path: str, working_dir: str | None = None, **kwargs: Any) -> str:
         """Create a directory."""
         target = Path(path).expanduser()
 
+        # Resolve relative paths against working directory
         if not target.is_absolute():
-            raise ToolExecutionError(self.name, f"Path must be absolute: {path}")
+            if working_dir:
+                target = Path(working_dir) / target
+            else:
+                target = Path.cwd() / target
 
         if target.exists():
             if target.is_dir():
@@ -260,12 +282,16 @@ class ListDirTool(Tool):
             ),
         ]
 
-    def execute(self, path: str, all: bool = False, **kwargs: Any) -> str:
+    def execute(self, path: str, all: bool = False, working_dir: str | None = None, **kwargs: Any) -> str:
         """List directory contents."""
         target = Path(path).expanduser()
 
+        # Resolve relative paths against working directory
         if not target.is_absolute():
-            raise ToolExecutionError(self.name, f"Path must be absolute: {path}")
+            if working_dir:
+                target = Path(working_dir) / target
+            else:
+                target = Path.cwd() / target
 
         if not target.exists():
             raise ToolExecutionError(self.name, f"Path does not exist: {path}")

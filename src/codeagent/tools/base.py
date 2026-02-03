@@ -158,8 +158,13 @@ class ToolRegistry:
     Thread-safe for concurrent access.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, working_dir: str | None = None) -> None:
         self._tools: dict[str, Tool] = {}
+        self._working_dir = working_dir
+
+    def set_working_dir(self, working_dir: str) -> None:
+        """Set the working directory for tool execution."""
+        self._working_dir = working_dir
 
     def register(self, tool: Tool) -> None:
         """
@@ -226,6 +231,9 @@ class ToolRegistry:
             ToolResult from the execution
         """
         tool = self.get(name)
+        # Pass working_dir to tools for resolving relative paths
+        if self._working_dir:
+            kwargs["working_dir"] = self._working_dir
         return tool.safe_execute(tool_call_id, **kwargs)
 
     def __len__(self) -> int:

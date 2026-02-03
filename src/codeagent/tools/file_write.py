@@ -43,6 +43,7 @@ class WriteFileTool(Tool):
         self,
         file_path: str,
         content: str,
+        working_dir: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -51,18 +52,19 @@ class WriteFileTool(Tool):
         Args:
             file_path: Path to write to
             content: Content to write
+            working_dir: Working directory for resolving relative paths
 
         Returns:
             Success message
         """
         path = Path(file_path).expanduser()
 
-        # Validate path
+        # Resolve relative paths against working directory
         if not path.is_absolute():
-            raise ToolExecutionError(
-                self.name,
-                f"Path must be absolute: {file_path}",
-            )
+            if working_dir:
+                path = Path(working_dir) / path
+            else:
+                path = Path.cwd() / path
 
         # Check if parent directory exists
         if not path.parent.exists():

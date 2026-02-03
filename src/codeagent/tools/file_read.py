@@ -52,6 +52,7 @@ class ReadFileTool(Tool):
         file_path: str,
         offset: int = 0,
         limit: int = 2000,
+        working_dir: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -61,18 +62,19 @@ class ReadFileTool(Tool):
             file_path: Path to the file
             offset: Starting line (0-indexed)
             limit: Maximum lines to read
+            working_dir: Working directory for resolving relative paths
 
         Returns:
             File contents with line numbers
         """
         path = Path(file_path).expanduser()
 
-        # Validate path
+        # Resolve relative paths against working directory
         if not path.is_absolute():
-            raise ToolExecutionError(
-                self.name,
-                f"Path must be absolute: {file_path}",
-            )
+            if working_dir:
+                path = Path(working_dir) / path
+            else:
+                path = Path.cwd() / path
 
         if not path.exists():
             raise ToolExecutionError(

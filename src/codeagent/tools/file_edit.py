@@ -77,6 +77,7 @@ class EditFileTool(Tool):
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        working_dir: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -87,18 +88,19 @@ class EditFileTool(Tool):
             old_string: String to find
             new_string: String to replace with
             replace_all: If True, replace all occurrences
+            working_dir: Working directory for resolving relative paths
 
         Returns:
             Success message with replacement count
         """
         path = Path(file_path).expanduser()
 
-        # Validate path
+        # Resolve relative paths against working directory
         if not path.is_absolute():
-            raise ToolExecutionError(
-                self.name,
-                f"Path must be absolute: {file_path}",
-            )
+            if working_dir:
+                path = Path(working_dir) / path
+            else:
+                path = Path.cwd() / path
 
         if not path.exists():
             raise ToolExecutionError(

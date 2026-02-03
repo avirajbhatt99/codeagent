@@ -63,6 +63,9 @@ class Agent:
         self._on_tool_start = on_tool_start
         self._on_tool_end = on_tool_end
 
+        # Set working directory on tool registry for resolving relative paths
+        self._tools.set_working_dir(working_dir)
+
         # Initialize conversation with system prompt
         self._messages: list[Message] = [
             Message.system(get_system_prompt(working_dir))
