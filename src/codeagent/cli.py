@@ -6,7 +6,11 @@ Modern, type-hint based CLI with auto-completion support.
 
 import logging
 import os
+import select
 import sys
+import termios
+import threading
+import tty
 from typing import Annotated, Optional
 
 import typer
@@ -28,6 +32,90 @@ from codeagent.tools import create_default_registry
 from codeagent.utils.console import Console as AgentConsole, diff_display
 from codeagent.tools.file_edit import set_diff_callback as set_edit_diff_callback
 from codeagent.tools.file_write import set_diff_callback as set_write_diff_callback
+
+
+class KeyboardInterrupt(Exception):
+    """Raised when user presses Escape to interrupt."""
+    pass
+
+
+class EscapeListener:
+    """
+    Listen for Escape key press in a background thread.
+
+    Usage:
+        listener = EscapeListener()
+        listener.start()
+        # ... do work, checking listener.interrupted periodically ...
+        listener.stop()
+    """
+
+    def __init__(self):
+        self._interrupted = False
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._old_settings = None
+
+    @property
+    def interrupted(self) -> bool:
+        """Check if Escape was pressed."""
+        return self._interrupted
+
+    def start(self) -> None:
+        """Start listening for Escape key."""
+        self._interrupted = False
+        self._running = True
+        self._thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop listening."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=0.1)
+        self._restore_terminal()
+
+    def reset(self) -> None:
+        """Reset the interrupted flag."""
+        self._interrupted = False
+
+    def _listen_loop(self) -> None:
+        """Background thread that listens for Escape key."""
+        try:
+            # Save terminal settings
+            if sys.stdin.isatty():
+                self._old_settings = termios.tcgetattr(sys.stdin)
+                # Set terminal to raw mode to catch individual keypresses
+                tty.setcbreak(sys.stdin.fileno())
+
+            while self._running:
+                # Check if there's input available (non-blocking)
+                if sys.stdin.isatty():
+                    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if rlist:
+                        char = sys.stdin.read(1)
+                        # Escape key is '\x1b'
+                        if char == '\x1b':
+                            self._interrupted = True
+                            self._running = False
+                            break
+                else:
+                    # Not a TTY, just sleep
+                    import time
+                    time.sleep(0.1)
+        except Exception:
+            pass
+        finally:
+            self._restore_terminal()
+
+    def _restore_terminal(self) -> None:
+        """Restore terminal settings."""
+        try:
+            if self._old_settings and sys.stdin.isatty():
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self._old_settings)
+                self._old_settings = None
+        except Exception:
+            pass
 
 
 # Initialize Typer app
@@ -408,22 +496,37 @@ def start_session(verbose: bool = False) -> None:
                 console.print()
                 continue
 
+            # Start escape listener for interrupt
+            escape_listener = EscapeListener()
+            escape_listener.start()
+
             agent_console.start_thinking()
 
             try:
                 first_chunk = True
                 for chunk in agent.stream(user_input):
+                    # Check if user pressed Escape
+                    if escape_listener.interrupted:
+                        agent_console.stop_thinking()
+                        agent_console.warning("\nInterrupted by user")
+                        break
+
                     if first_chunk:
                         agent_console.assistant_start()
                         first_chunk = False
                     agent_console.assistant_stream(chunk)
-                agent_console.assistant_end()
+
+                if not escape_listener.interrupted:
+                    agent_console.assistant_end()
             except MaxIterationsError:
                 agent_console.stop_thinking()
                 agent_console.error("Max iterations reached.")
             except CodeAgentError as e:
                 agent_console.stop_thinking()
                 agent_console.error(f"Error: {e.message}")
+            finally:
+                # Always stop the escape listener
+                escape_listener.stop()
 
         except KeyboardInterrupt:
             console.print()
