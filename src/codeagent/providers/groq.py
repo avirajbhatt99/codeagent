@@ -7,6 +7,7 @@ The API is OpenAI-compatible. See: https://console.groq.com
 
 import json
 import logging
+import re
 import time
 from typing import Any, Generator, Optional
 
@@ -101,6 +102,40 @@ class GroqProvider(LLMProvider):
                 )
             raise ProviderConfigError(self.name, f"Validation failed: {msg}")
 
+    # Cap a single 429 wait so we never sleep absurdly long if Groq returns
+    # something pathological (e.g. "try again in 600s").
+    MAX_429_WAIT_SECONDS = 60.0
+
+    @staticmethod
+    def _extract_retry_after_seconds(err: Exception) -> Optional[float]:
+        """Pull a wait-time hint out of a 429 error.
+
+        Groq embeds it in the message body: "Please try again in 3.63s".
+        Falls back to the standard HTTP Retry-After header on the response.
+        """
+        # HTTP Retry-After header (set by the openai SDK on RateLimitError)
+        resp = getattr(err, "response", None)
+        if resp is not None:
+            headers = getattr(resp, "headers", None) or {}
+            try:
+                retry_after = headers.get("retry-after") or headers.get("Retry-After")
+            except Exception:
+                retry_after = None
+            if retry_after:
+                try:
+                    return float(retry_after)
+                except (TypeError, ValueError):
+                    pass
+
+        # Provider-formatted hint in the error message
+        m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)\s*s", str(err))
+        if m:
+            try:
+                return float(m.group(1))
+            except ValueError:
+                return None
+        return None
+
     def _retry_request(self, func, *args, **kwargs):
         last_error = None
         delay = RETRY_DELAY
@@ -114,6 +149,22 @@ class GroqProvider(LLMProvider):
                     raise
                 if "400" in low or "invalid" in low:
                     raise
+
+                # 429: honor the hint instead of a flat backoff.
+                if "429" in low or "rate limit" in low or "rate_limit" in low:
+                    wait = self._extract_retry_after_seconds(e)
+                    if wait is None:
+                        wait = delay
+                    # Tiny buffer so we don't race the bucket reset.
+                    wait = min(wait + 0.5, self.MAX_429_WAIT_SECONDS)
+                    if attempt < MAX_RETRIES - 1:
+                        logger.warning(
+                            f"Rate limited (attempt {attempt + 1}), waiting {wait:.1f}s"
+                        )
+                        time.sleep(wait)
+                        continue
+                    raise
+
                 if attempt < MAX_RETRIES - 1:
                     logger.warning(
                         f"Request failed (attempt {attempt + 1}), retrying in {delay}s: {e}"
@@ -166,7 +217,11 @@ class GroqProvider(LLMProvider):
                 kwargs["tools"] = tools
 
             tool_calls_buffer: dict[int, dict[str, Any]] = {}
-            response = self._client.chat.completions.create(**kwargs)
+            # Honor 429 retry-after — important for users on Groq's free tier
+            # where the 8k TPM window gets blown by our 48-tool schema.
+            response = self._retry_request(
+                lambda: self._client.chat.completions.create(**kwargs)
+            )
 
             for chunk in response:
                 usage = getattr(chunk, "usage", None)

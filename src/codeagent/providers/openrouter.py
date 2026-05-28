@@ -8,6 +8,7 @@ See: https://openrouter.ai
 
 import json
 import logging
+import re
 import time
 from typing import Any, Generator, Optional
 
@@ -189,8 +190,38 @@ class OpenRouterProvider(LLMProvider):
                 break
         return out
 
+    MAX_429_WAIT_SECONDS = 60.0
+
+    @staticmethod
+    def _extract_retry_after_seconds(err: Exception) -> Optional[float]:
+        """Pull a wait-time hint out of a 429 error.
+
+        Checks the Retry-After header first, then a "try again in Ns" pattern
+        in the message body (some providers, e.g. Groq via OpenRouter, embed it).
+        """
+        resp = getattr(err, "response", None)
+        if resp is not None:
+            headers = getattr(resp, "headers", None) or {}
+            try:
+                retry_after = headers.get("retry-after") or headers.get("Retry-After")
+            except Exception:
+                retry_after = None
+            if retry_after:
+                try:
+                    return float(retry_after)
+                except (TypeError, ValueError):
+                    pass
+
+        m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)\s*s", str(err))
+        if m:
+            try:
+                return float(m.group(1))
+            except ValueError:
+                return None
+        return None
+
     def _retry_request(self, func, *args, **kwargs):
-        """Execute a request with retry logic."""
+        """Execute a request with retry logic, honoring 429 retry-after hints."""
         last_error = None
         delay = RETRY_DELAY
 
@@ -207,6 +238,20 @@ class OpenRouterProvider(LLMProvider):
 
                 # Don't retry on bad requests
                 if "400" in error_msg or "invalid" in error_msg:
+                    raise
+
+                # 429: honor the hint
+                if "429" in error_msg or "rate limit" in error_msg or "rate_limit" in error_msg:
+                    wait = self._extract_retry_after_seconds(e)
+                    if wait is None:
+                        wait = delay
+                    wait = min(wait + 0.5, self.MAX_429_WAIT_SECONDS)
+                    if attempt < MAX_RETRIES - 1:
+                        logger.warning(
+                            f"Rate limited (attempt {attempt + 1}), waiting {wait:.1f}s"
+                        )
+                        time.sleep(wait)
+                        continue
                     raise
 
                 if attempt < MAX_RETRIES - 1:
@@ -272,7 +317,9 @@ class OpenRouterProvider(LLMProvider):
             # Buffer for accumulating tool calls across chunks
             tool_calls_buffer: dict[int, dict[str, Any]] = {}
 
-            response = self._client.chat.completions.create(**kwargs)
+            response = self._retry_request(
+                lambda: self._client.chat.completions.create(**kwargs)
+            )
 
             for chunk in response:
                 # Trailing usage-only chunk arrives after choices are done.
