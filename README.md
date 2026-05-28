@@ -1,45 +1,35 @@
-# CodeAgent
+# forge-code
 
 AI-powered coding assistant CLI. Works with local models (Ollama) or cloud providers (OpenRouter, HuggingFace).
 
 **No environment variables needed** - everything is configured through simple CLI prompts.
 
-## Quick Install
+## Install
 
-### Global Installation (Recommended)
-
-**macOS / Linux:**
-```bash
-pip3 install git+https://github.com/avirajbhatt99/codeagent.git
-```
-
-**Windows:**
-```powershell
-pip install git+https://github.com/avirajbhatt99/codeagent.git
-```
-
-**With pipx (isolated environment):**
-```bash
-# Install pipx first if you don't have it
-# macOS: brew install pipx
-# Linux: sudo apt install pipx
-# Windows: pip install pipx
-
-pipx install git+https://github.com/avirajbhatt99/codeagent.git
-```
-
-### Local Development Install
+### From PyPI (recommended)
 
 ```bash
-git clone https://github.com/avirajbhatt99/codeagent.git
-cd codeagent
-pip3 install -e .
+pip install forge-code
 ```
 
-### Verify Installation
+Or with [pipx](https://pipx.pypa.io/) for an isolated install:
 
 ```bash
-codeagent --version
+pipx install forge-code
+```
+
+### From source
+
+```bash
+git clone https://github.com/avirajbhatt99/code-agent.git
+cd code-agent
+pip install -e .
+```
+
+### Verify
+
+```bash
+forge-code --version
 ```
 
 ## Quick Start
@@ -49,8 +39,8 @@ codeagent --version
 **macOS:**
 ```bash
 brew install ollama
-ollama serve  # Start the server
-ollama pull qwen2.5:7b  # Download a model
+ollama serve            # start the server
+ollama pull qwen2.5:7b  # download a model
 ```
 
 **Linux:**
@@ -67,123 +57,90 @@ ollama serve
 ollama pull qwen2.5:7b
 ```
 
-### 2. Run CodeAgent
+(Skip Ollama if you'd rather use OpenRouter or HuggingFace.)
+
+### 2. Run forge-code
 
 ```bash
-codeagent
+forge-code
 ```
 
-First time? You'll see a setup wizard:
+First time? You'll see a setup wizard that asks you to pick a provider (Ollama / OpenRouter / HuggingFace) and a model.
 
-```
-Welcome to CodeAgent!
-
-Step 1: Choose provider
-  1  Ollama (Local)    Free, private, runs locally
-  2  OpenRouter        Cloud API, many models
-  3  HuggingFace       Cloud API, open models
-
-Select [1]: 1
-
-✓ Ollama (Local)
-
-Step 2: Checking Ollama...
-✓ Ollama running
-
-Step 3: Choose model
-  1. qwen2.5:7b
-  2. llama3.2:3b
-  ...
-
-Select [1]: 1
-
-✓ Model: qwen2.5:7b
-
-Setup complete!
-```
-
-### 3. Start Coding!
+### 3. Start coding
 
 ```
 ❯ read my code and explain it
-Glob **/*.py
-Read src/main.py
-Read src/utils.py
+● Glob(**/*.py)
+● Read(src/main.py)
+● Read(src/utils.py)
 
 This is a Python CLI application that...
 
 ❯ write a function to calculate fibonacci
-Write fibonacci.py
+● Write(fibonacci.py)
 
-Created fibonacci.py with fibonacci function.
+Created fibonacci.py with the function.
 
 ❯ run the tests
-$ pytest
-...
-All tests passed!
+● Bash(pytest)
+
+All tests passed.
 ```
 
 ## Usage
 
-### Basic Commands
+### CLI commands
 
 ```bash
-codeagent              # Start interactive session
-codeagent setup        # Re-run setup wizard
-codeagent config       # View/edit configuration
-codeagent models       # List available models
-codeagent pull         # Download Ollama model
-codeagent --help       # Show all commands
+forge-code              # start interactive session
+forge-code setup        # re-run setup wizard
+forge-code config       # view/edit configuration
+forge-code models       # list available models
+forge-code pull         # download an Ollama model
+forge-code --help       # show all commands
 ```
 
 ### Configuration
 
 ```bash
-# View current config
-codeagent config
-
-# Change provider
-codeagent config --provider openrouter
-
-# Change model
-codeagent config --model gpt-4o
-
-# Update API key
-codeagent config --api-key
-
-# Reset to defaults
-codeagent config --reset
+forge-code config                      # view current config
+forge-code config --provider openrouter
+forge-code config --model gpt-4o
+forge-code config --api-key            # update API key
+forge-code config --reset              # reset to defaults
 ```
 
-### In-Session Commands
+### In-session slash commands
+
+The leading `/` is optional.
 
 | Command | Action |
 |---------|--------|
-| `exit` | Quit session |
-| `clear` | Clear history |
-| `help` | Show help |
-| `Ctrl+C` | Cancel current |
+| `/help` | Show help |
+| `/clear` | Clear conversation and todos |
+| `/tokens` | Show token usage this session |
+| `/todos` | Show the current todo list |
+| `/exit` | Quit (also `/quit`, `/q`, `Ctrl+D`) |
+| `Esc` | Interrupt the current response |
 
 ## Tools
 
-CodeAgent can:
+forge-code ships with 48+ tools. Highlights:
 
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read any file |
-| `write_file` | Create new files |
-| `edit_file` | Modify existing files |
-| `delete` | Delete files/directories |
-| `copy` | Copy files/directories |
-| `move` | Move/rename files |
-| `mkdir` | Create directories |
-| `ls` | List directory contents |
-| `glob` | Find files by pattern |
-| `grep` | Search in files |
-| `bash` | Run shell commands |
-| `git_*` | Git operations (status, diff, commit, etc.) |
+| Category | Tools |
+|----------|-------|
+| **Files** | `read_file`, `write_file`, `edit_file`, `delete`, `copy`, `move`, `mkdir`, `ls` |
+| **Search** | `glob`, `grep` |
+| **Shell** | `bash` |
+| **Git** | `git_status`, `git_diff`, `git_log`, `git_add`, `git_commit`, `git_branch`, `git_checkout`, `git_push`, `git_pull`, `git_reset`, `git_merge`, `git_stash`, `git_clone`, `git_tag`, `git_remote`, `git_init` |
+| **Web** | `web_fetch`, `http_request` |
+| **Packages** | `npm_*`, `pip_*`, `cargo_*` |
+| **Planning** | `todo_write` |
 
-### Example Tasks
+Mutating tools (writes, shell, destructive git, network requests) ask for permission before running. Approve once (`y`), allow for the rest of the session (`a`), or deny (`n`, default).
+
+### Example tasks
 
 ```
 "read my code and explain it"
@@ -192,33 +149,31 @@ CodeAgent can:
 "run the tests and fix failures"
 "refactor this function to be cleaner"
 "add type hints to utils.py"
-"create a new feature branch and commit"
 ```
 
 ## Providers
 
-### Ollama (Local) - Default
+### Ollama (local) — default
 
-- **Free** and **private**
-- Runs on your machine
-- No internet needed (after model download)
-- Models: `qwen2.5:7b`, `llama3.2:3b`, `codellama:7b`
+- Free and private, runs on your machine
+- Models: `qwen2.5:7b`, `llama3.2:3b`, `codellama:7b`, others
 
-### OpenRouter (Cloud)
+### OpenRouter (cloud)
 
-- Access GPT-4, Claude, Llama, and more
-- Some **free models** (DeepSeek)
-- Get API key: https://openrouter.ai/keys
+- Access GPT-4, Claude, Llama, DeepSeek, and more
+- Some free models available
+- Get an API key: <https://openrouter.ai/keys>
+- Anthropic models (`anthropic/*`) use prompt caching automatically to keep long sessions cheap
 
-### HuggingFace (Cloud)
+### HuggingFace (cloud)
 
-- Open-source models
-- Get token: https://huggingface.co/settings/tokens
+- Open-source models via the HF Inference API
+- Get a token: <https://huggingface.co/settings/tokens>
 
-## Configuration File
+## Configuration file
 
 Settings stored in:
-- **macOS/Linux:** `~/.config/codeagent/config.json`
+- **macOS / Linux:** `~/.config/codeagent/config.json`
 - **Windows:** `%APPDATA%\codeagent\config.json`
 
 ```json
@@ -235,58 +190,42 @@ Settings stored in:
 ### Ollama not connecting
 
 ```bash
-# Check if Ollama is running
-ollama list
-
-# Start Ollama
-ollama serve
-
-# Pull a model
-ollama pull qwen2.5:7b
+ollama list             # check it's running
+ollama serve            # start it
+ollama pull qwen2.5:7b  # pull a model
 ```
 
-### API key issues
+### Bad API key
 
 ```bash
-codeagent config --api-key
+forge-code config --api-key
 ```
 
 ### Reset everything
 
 ```bash
-codeagent config --reset
-codeagent setup
+forge-code config --reset
+forge-code setup
 ```
 
-### Windows PATH issues
+### Windows
 
-If `codeagent` command not found after pip install:
+The `Esc` key interrupt is POSIX-only — on Windows, use `Ctrl+C` to interrupt and `Ctrl+Z` to exit.
 
-```powershell
-# Add Python Scripts to PATH
-# Usually: C:\Users\<username>\AppData\Local\Programs\Python\Python3x\Scripts
-
-# Or use:
-python -m codeagent
-```
+If `forge-code` isn't found after `pip install`, your Python `Scripts/` directory may not be on `PATH`. Either add it (usually `C:\Users\<you>\AppData\Local\Programs\Python\Python3x\Scripts`) or run via `python -m codeagent.cli`.
 
 ## Development
 
 ```bash
-git clone https://github.com/avirajbhatt99/codeagent.git
-cd codeagent
-pip3 install -e ".[dev]"
+git clone https://github.com/avirajbhatt99/code-agent.git
+cd code-agent
+pip install -e ".[dev]"
 
-# Run tests
-pytest
-
-# Type checking
-mypy src/codeagent
-
-# Linting
-ruff check src/codeagent
+pytest                      # tests
+mypy src/codeagent          # type checking
+ruff check src/codeagent    # lint
 ```
 
 ## License
 
-MIT License
+MIT
