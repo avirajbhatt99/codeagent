@@ -1,4 +1,4 @@
-# forge-code
+# ultracode
 
 AI-powered coding assistant CLI. Works with local models (Ollama) or cloud providers (OpenRouter, HuggingFace).
 
@@ -9,13 +9,13 @@ AI-powered coding assistant CLI. Works with local models (Ollama) or cloud provi
 ### From PyPI (recommended)
 
 ```bash
-pip install forge-code
+pip install ultracode
 ```
 
 Or with [pipx](https://pipx.pypa.io/) for an isolated install:
 
 ```bash
-pipx install forge-code
+pipx install ultracode
 ```
 
 ### From source
@@ -29,7 +29,7 @@ pip install -e .
 ### Verify
 
 ```bash
-forge-code --version
+ultracode --version
 ```
 
 ## Quick Start
@@ -59,10 +59,10 @@ ollama pull qwen2.5:7b
 
 (Skip Ollama if you'd rather use OpenRouter or HuggingFace.)
 
-### 2. Run forge-code
+### 2. Run ultracode
 
 ```bash
-forge-code
+ultracode
 ```
 
 First time? You'll see a setup wizard that asks you to pick a provider (Ollama / OpenRouter / HuggingFace) and a model.
@@ -93,22 +93,22 @@ All tests passed.
 ### CLI commands
 
 ```bash
-forge-code              # start interactive session
-forge-code setup        # re-run setup wizard
-forge-code config       # view/edit configuration
-forge-code models       # list available models
-forge-code pull         # download an Ollama model
-forge-code --help       # show all commands
+ultracode              # start interactive session
+ultracode setup        # re-run setup wizard
+ultracode config       # view/edit configuration
+ultracode models       # list available models
+ultracode pull         # download an Ollama model
+ultracode --help       # show all commands
 ```
 
 ### Configuration
 
 ```bash
-forge-code config                      # view current config
-forge-code config --provider openrouter
-forge-code config --model gpt-4o
-forge-code config --api-key            # update API key
-forge-code config --reset              # reset to defaults
+ultracode config                      # view current config
+ultracode config --provider openrouter
+ultracode config --model gpt-4o
+ultracode config --api-key            # update API key
+ultracode config --reset              # reset to defaults
 ```
 
 ### In-session slash commands
@@ -126,7 +126,7 @@ The leading `/` is optional.
 
 ## Tools
 
-forge-code ships with 48+ tools. Highlights:
+ultracode ships with 48+ tools. Highlights:
 
 | Category | Tools |
 |----------|-------|
@@ -199,21 +199,21 @@ ollama pull qwen2.5:7b  # pull a model
 ### Bad API key
 
 ```bash
-forge-code config --api-key
+ultracode config --api-key
 ```
 
 ### Reset everything
 
 ```bash
-forge-code config --reset
-forge-code setup
+ultracode config --reset
+ultracode setup
 ```
 
 ### Windows
 
 The `Esc` key interrupt is POSIX-only — on Windows, use `Ctrl+C` to interrupt and `Ctrl+Z` to exit.
 
-If `forge-code` isn't found after `pip install`, your Python `Scripts/` directory may not be on `PATH`. Either add it (usually `C:\Users\<you>\AppData\Local\Programs\Python\Python3x\Scripts`) or run via `python -m codeagent.cli`.
+If `ultracode` isn't found after `pip install`, your Python `Scripts/` directory may not be on `PATH`. Either add it (usually `C:\Users\<you>\AppData\Local\Programs\Python\Python3x\Scripts`) or run via `python -m codeagent.cli`.
 
 ## Development
 
