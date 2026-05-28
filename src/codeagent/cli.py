@@ -604,13 +604,16 @@ def start_session(verbose: bool = False) -> None:
     working_dir = os.getcwd()
     agent_console = AgentConsole()
 
-    # Set up diff display callbacks for file operations
+    # Set up diff display callbacks for file operations. The blinking tool
+    # indicator runs on a background thread; we must stop it before printing
+    # the diff, otherwise the next blink redraw collides with the diff output
+    # (you get '● Write(file)● Create(file)' on one line).
     def on_edit_diff(file_path: str, old_content: str, new_content: str) -> None:
-        """Display diff for edit operations."""
+        agent_console.stop_tool_indicator()
         diff_display.show_diff(file_path, old_content, new_content)
 
     def on_write_diff(file_path: str, old_content: str | None, new_content: str) -> None:
-        """Display diff for write operations."""
+        agent_console.stop_tool_indicator()
         diff_display.show_write_diff(file_path, new_content, old_content)
 
     set_edit_diff_callback(on_edit_diff)
@@ -636,13 +639,26 @@ def start_session(verbose: bool = False) -> None:
             if was_thinking:
                 agent_console.start_thinking()
 
+    def on_tool_start(tc):
+        # Tool indicator stops the thinking spinner internally.
+        agent_console.tool_start(tc.name, tc.arguments)
+        session_state["thinking"] = False
+
+    def on_tool_end(tr):
+        agent_console.tool_result(tr.content, tr.is_error)
+        # Between turns the model often pauses for several seconds before
+        # producing its follow-up message. Resume the thinking indicator so
+        # the user knows we're still alive.
+        agent_console.start_thinking()
+        session_state["thinking"] = True
+
     agent = Agent(
         provider=provider,
         tools=tools,
         working_dir=working_dir,
         max_iterations=config.max_iterations,
-        on_tool_start=lambda tc: agent_console.tool_start(tc.name, tc.arguments),
-        on_tool_end=lambda tr: agent_console.tool_result(tr.content, tr.is_error),
+        on_tool_start=on_tool_start,
+        on_tool_end=on_tool_end,
         permission_prompt=permission_prompt,
     )
 
