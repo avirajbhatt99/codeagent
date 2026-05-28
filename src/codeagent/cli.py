@@ -139,7 +139,7 @@ class EscapeListener:
 # Initialize Typer app
 app = typer.Typer(
     name="codeagent",
-    help="AI-powered coding assistant CLI",
+    help="forge-code — AI-powered coding assistant CLI",
     add_completion=True,
     no_args_is_help=False,
 )
@@ -277,7 +277,7 @@ def create_provider_from_config(config: StoredConfig) -> LLMProvider:
 
 def run_setup_wizard() -> StoredConfig:
     """Run the interactive setup wizard."""
-    console.print("\n[bold cyan]Welcome to CodeAgent![/bold cyan]\n")
+    console.print("\n[bold cyan]Welcome to forge-code![/bold cyan]\n")
 
     # Step 1: Provider
     console.print("[bold]Step 1: Choose provider[/bold]\n")
@@ -434,7 +434,7 @@ def print_welcome(model: str, path: str) -> None:
     rule = "─" * _divider_width()
 
     console.print()
-    console.print("[bold bright_magenta]  ◆ CodeAgent[/bold bright_magenta]", end="")
+    console.print("[bold bright_magenta]  ◆ forge-code[/bold bright_magenta]", end="")
     console.print(f"  [dim]v{__version__}[/dim]")
     console.print()
     console.print(f"  [dim]Model:[/dim]  [bright_cyan]{model}[/bright_cyan]")
@@ -572,7 +572,7 @@ def start_session(verbose: bool = False) -> None:
         provider = create_provider_from_config(config)
     except ProviderConfigError as e:
         console.print(f"[red]Config error:[/red] {e.message}")
-        console.print("[dim]Run: codeagent setup[/dim]")
+        console.print("[dim]Run: forge-code setup[/dim]")
         return
     except Exception as e:
         console.print(f"[red]Connection failed:[/red] {e}")
@@ -739,7 +739,7 @@ def main(
         console.print("[dim]Debug logging enabled[/dim]\n")
 
     if version:
-        console.print(f"CodeAgent v{__version__}")
+        console.print(f"forge-code v{__version__}")
         raise typer.Exit()
 
     if ctx.invoked_subcommand is None:
@@ -875,7 +875,7 @@ def models(
         models_list = get_ollama_models()
         if not models_list:
             console.print("[yellow]No models installed[/yellow]")
-            console.print("[dim]Download: codeagent pull[/dim]")
+            console.print("[dim]Download: forge-code pull[/dim]")
         else:
             for i, m in enumerate(models_list, 1):
                 marker = " [cyan](current)[/cyan]" if m == cfg.model else ""
@@ -890,7 +890,7 @@ def models(
             marker = " [cyan](current)[/cyan]" if m == cfg.model else ""
             console.print(f"  {i}. {m}{marker}")
 
-    console.print(f"\n[dim]Change: codeagent config --model <name>[/dim]\n")
+    console.print(f"\n[dim]Change: forge-code config --model <name>[/dim]\n")
 
 
 # Entry point
