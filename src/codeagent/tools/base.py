@@ -218,23 +218,33 @@ class ToolRegistry:
         """Get OpenAI-compatible schemas for all registered tools."""
         return [tool.get_schema() for tool in self._tools.values()]
 
-    def execute(self, name: str, tool_call_id: str, **kwargs: Any) -> ToolResult:
+    def execute(
+        self,
+        name: str,
+        tool_call_id: str,
+        arguments: Optional[dict[str, Any]] = None,
+        /,
+        **legacy_kwargs: Any,
+    ) -> ToolResult:
         """
         Execute a tool by name.
 
-        Args:
-            name: Name of the tool to execute
-            tool_call_id: ID of the tool call
-            **kwargs: Arguments to pass to the tool
+        ``name`` and ``tool_call_id`` are positional-only so that an
+        ``arguments`` dict from the LLM (which often contains keys like
+        ``name`` or ``tool_call_id``, e.g. ``env_get(name="USER")``) can be
+        forwarded without colliding with this method's own parameters.
 
-        Returns:
-            ToolResult from the execution
+        ``legacy_kwargs`` is accepted for backwards compatibility with older
+        ``execute(name=..., tool_call_id=..., **arguments)`` callers, but new
+        code should pass the LLM args as the ``arguments`` dict.
         """
+        merged = dict(arguments) if arguments else {}
+        merged.update(legacy_kwargs)
+
         tool = self.get(name)
-        # Pass working_dir to tools for resolving relative paths
         if self._working_dir:
-            kwargs["working_dir"] = self._working_dir
-        return tool.safe_execute(tool_call_id, **kwargs)
+            merged.setdefault("working_dir", self._working_dir)
+        return tool.safe_execute(tool_call_id, **merged)
 
     def __len__(self) -> int:
         return len(self._tools)

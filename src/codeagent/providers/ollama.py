@@ -114,7 +114,7 @@ class OllamaProvider(LLMProvider):
                 kwargs["tools"] = tools
 
             response = self._client.chat(**kwargs)
-            return self._parse_response(response)
+            return self._parse_response(response, tools=tools)
 
         except ollama.ResponseError as e:
             if "model" in str(e).lower() and "not found" in str(e).lower():
@@ -126,7 +126,13 @@ class OllamaProvider(LLMProvider):
         messages: list[dict[str, Any]],
         tools: Optional[list[dict[str, Any]]] = None,
     ) -> Generator[StreamChunk, None, None]:
-        """Stream a chat response from Ollama."""
+        """Stream a chat response from Ollama.
+
+        Some local models (qwen2.5-coder, some llama variants) emit tool calls
+        as JSON in `message.content` instead of in the structured `tool_calls`
+        field. To avoid spraying that JSON at the user, we buffer content until
+        we know whether it's a real text reply or a tool-call hallucination.
+        """
         import ollama
 
         try:
@@ -138,24 +144,52 @@ class OllamaProvider(LLMProvider):
             if tools:
                 kwargs["tools"] = tools
 
-            full_content = ""
+            buffered = ""
+            buffering = True  # hold output until we know if it's tool-call JSON
+            yielded_any = False
             tool_calls: list[ToolCall] = []
+            tool_names = self._collect_tool_names(tools)
 
             for chunk in self._client.chat(**kwargs):
                 msg = chunk.get("message", {})
 
-                # Handle content chunks
-                if content := msg.get("content"):
-                    full_content += content
-                    yield StreamChunk(content=content)
+                content = msg.get("content") or ""
+                if content:
+                    buffered += content
+                    if buffering:
+                        # If the buffer is clearly *not* tool-call JSON, flush.
+                        if not self._looks_like_tool_call_start(buffered):
+                            yield StreamChunk(content=buffered)
+                            yielded_any = True
+                            buffering = False
+                            buffered = ""
+                    else:
+                        yield StreamChunk(content=content)
 
-                # Handle tool calls (usually at the end)
-                if "tool_calls" in msg and msg["tool_calls"]:
+                # Native structured tool_calls (proper path)
+                if msg.get("tool_calls"):
                     for tc in msg["tool_calls"]:
                         tool_calls.append(self._parse_tool_call(tc, len(tool_calls)))
 
-                # Check for completion
                 if chunk.get("done"):
+                    # No native tool_calls — try to recover one from buffered content
+                    if not tool_calls and buffering and buffered.strip():
+                        recovered = self._extract_tool_calls_from_text(buffered, tool_names)
+                        if recovered:
+                            tool_calls = recovered
+                            buffered = ""  # don't show the JSON
+                        else:
+                            # Real text after all — flush whatever we held back
+                            yield StreamChunk(content=buffered)
+                            yielded_any = True
+                            buffered = ""
+                    elif buffered:
+                        # Had buffered content + native tool_calls arrived. The
+                        # buffered text is likely the model's prelude; emit it.
+                        yield StreamChunk(content=buffered)
+                        yielded_any = True
+                        buffered = ""
+
                     yield StreamChunk(
                         content="",
                         tool_calls=tool_calls,
@@ -166,20 +200,178 @@ class OllamaProvider(LLMProvider):
         except ollama.ResponseError as e:
             raise APIError(self.name, f"Streaming error: {e}") from e
 
-    def _parse_response(self, response: dict[str, Any]) -> LLMResponse:
-        """Parse Ollama response into LLMResponse."""
+    def _parse_response(
+        self,
+        response: dict[str, Any],
+        tools: Optional[list[dict[str, Any]]] = None,
+    ) -> LLMResponse:
+        """Parse Ollama response into LLMResponse.
+
+        Falls back to recovering tool calls from `message.content` if the model
+        embedded them as JSON instead of using the native `tool_calls` field.
+        """
         msg = response.get("message", {})
+        content = msg.get("content") or ""
         tool_calls: list[ToolCall] = []
 
-        if "tool_calls" in msg and msg["tool_calls"]:
+        if msg.get("tool_calls"):
             for i, tc in enumerate(msg["tool_calls"]):
                 tool_calls.append(self._parse_tool_call(tc, i))
 
+        if not tool_calls and content.strip():
+            recovered = self._extract_tool_calls_from_text(
+                content, self._collect_tool_names(tools)
+            )
+            if recovered:
+                tool_calls = recovered
+                content = ""  # swallow the JSON; the tool call replaces it
+
         return LLMResponse(
-            content=msg.get("content"),
+            content=content or None,
             tool_calls=tool_calls,
             finish_reason="stop" if not tool_calls else "tool_calls",
         )
+
+    @staticmethod
+    def _collect_tool_names(tools: Optional[list[dict[str, Any]]]) -> set[str]:
+        """Pull the registered tool names out of an OpenAI-format schema list."""
+        names: set[str] = set()
+        for t in tools or []:
+            fn = (t.get("function") or {}) if isinstance(t, dict) else {}
+            name = fn.get("name")
+            if isinstance(name, str):
+                names.add(name)
+        return names
+
+    @staticmethod
+    def _looks_like_tool_call_start(buf: str) -> bool:
+        """Cheap prefix test to decide whether to keep buffering content."""
+        s = buf.lstrip()
+        if not s:
+            return True  # still empty, keep waiting
+        if s.startswith("```"):
+            return True  # fenced JSON block
+        if s.startswith("{") or s.startswith("["):
+            return True
+        return False
+
+    @classmethod
+    def _extract_tool_calls_from_text(
+        cls, text: str, tool_names: set[str]
+    ) -> list[ToolCall]:
+        """Try hard to find tool-call JSON inside free-form model output."""
+        candidates = cls._candidate_json_blobs(text)
+        out: list[ToolCall] = []
+        for blob in candidates:
+            try:
+                parsed = json.loads(blob)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            for obj in parsed if isinstance(parsed, list) else [parsed]:
+                tc = cls._tool_call_from_obj(obj, tool_names, len(out))
+                if tc is not None:
+                    out.append(tc)
+            if out:
+                return out  # first viable blob wins
+        return out
+
+    @staticmethod
+    def _candidate_json_blobs(text: str) -> list[str]:
+        """Extract JSON-shaped fragments from free-form text.
+
+        Handles:
+          - bare object/array at the start
+          - fenced ```json ... ``` blocks
+          - object/array embedded mid-paragraph
+        """
+        blobs: list[str] = []
+        s = text.strip()
+
+        # Strip code fences if present
+        if s.startswith("```"):
+            # ```json\n{...}\n```   or   ```\n{...}\n```
+            inner = s.split("\n", 1)[1] if "\n" in s else ""
+            if inner.endswith("```"):
+                inner = inner[:-3]
+            s = inner.strip()
+
+        # Greedy balanced-bracket scan starting at each '{' or '['.
+        for i, ch in enumerate(text):
+            if ch not in "{[":
+                continue
+            open_ch, close_ch = ch, "}" if ch == "{" else "]"
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(i, len(text)):
+                c = text[j]
+                if esc:
+                    esc = False
+                    continue
+                if c == "\\" and in_str:
+                    esc = True
+                    continue
+                if c == '"':
+                    in_str = not in_str
+                    continue
+                if in_str:
+                    continue
+                if c == open_ch:
+                    depth += 1
+                elif c == close_ch:
+                    depth -= 1
+                    if depth == 0:
+                        blobs.append(text[i : j + 1])
+                        break
+
+        # Also try the fence-stripped version as a first-class candidate.
+        if s and s not in blobs:
+            blobs.insert(0, s)
+        return blobs
+
+    @staticmethod
+    def _tool_call_from_obj(
+        obj: Any, tool_names: set[str], idx: int
+    ) -> Optional[ToolCall]:
+        """Map a parsed JSON object to a ToolCall if it looks tool-shaped."""
+        if not isinstance(obj, dict):
+            return None
+
+        # Shape 1: {"name": "...", "arguments": {...}}
+        name = obj.get("name")
+        args = obj.get("arguments")
+        if isinstance(name, str):
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    args = {}
+            if args is None:
+                args = obj.get("parameters") or {}
+            if not tool_names or name in tool_names:
+                return ToolCall(
+                    id=f"recovered_{idx}",
+                    name=name,
+                    arguments=args if isinstance(args, dict) else {},
+                )
+
+        # Shape 2: {"function": {"name": ..., "arguments": ...}}
+        fn = obj.get("function")
+        if isinstance(fn, dict):
+            fname = fn.get("name")
+            fargs = fn.get("arguments")
+            if isinstance(fargs, str):
+                try:
+                    fargs = json.loads(fargs)
+                except (json.JSONDecodeError, ValueError):
+                    fargs = {}
+            if isinstance(fname, str) and (not tool_names or fname in tool_names):
+                return ToolCall(
+                    id=obj.get("id", f"recovered_{idx}"),
+                    name=fname,
+                    arguments=fargs if isinstance(fargs, dict) else {},
+                )
+        return None
 
     def _parse_tool_call(self, tc: dict[str, Any], index: int) -> ToolCall:
         """Parse a single tool call from Ollama response."""

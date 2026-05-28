@@ -7,7 +7,7 @@ A flexible CLI tool that works with multiple LLM providers:
 - HuggingFace (inference API)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"
 __author__ = "Your Name"
 
 from codeagent.core.agent import Agent

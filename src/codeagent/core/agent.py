@@ -248,11 +248,12 @@ class Agent:
         if self._on_tool_start:
             self._on_tool_start(tool_call)
 
-        # Execute the tool
+        # Execute the tool. Pass arguments as a dict (not splat) so LLM-supplied
+        # keys like {"name": ...} don't collide with execute()'s parameters.
         result = self._tools.execute(
-            name=tool_call.name,
-            tool_call_id=tool_call.id,
-            **tool_call.arguments,
+            tool_call.name,
+            tool_call.id,
+            tool_call.arguments,
         )
 
         logger.debug(f"Tool result (truncated): {result.content[:200]}")
