@@ -156,7 +156,8 @@ Mutating tools (writes, shell, destructive git, network requests) ask for permis
 ### Ollama (local) — default
 
 - Free and private, runs on your machine
-- Models: `qwen2.5:7b`, `llama3.2:3b`, `codellama:7b`, others
+- Recommended: `qwen2.5-coder:7b`, `llama3.1:8b`, `mistral:7b`
+- **Tool calling is model- and version-dependent on Ollama.** If the agent returns JSON as text instead of actually invoking tools, your model isn't emitting structured `tool_calls`. Try a different model or upgrade Ollama. Cloud providers (OpenRouter, HuggingFace) are more reliable for tool use.
 
 ### OpenRouter (cloud)
 
