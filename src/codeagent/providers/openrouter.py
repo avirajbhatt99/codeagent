@@ -114,28 +114,80 @@ class OpenRouterProvider(LLMProvider):
 
     def validate_api_key(self) -> bool:
         """
-        Validate the API key by making a test request.
+        Validate the API key by listing models.
 
-        Returns:
-            True if API key is valid
-
-        Raises:
-            ProviderConfigError: If API key is invalid
+        Returns True only on a clean success. A clear auth failure raises
+        ProviderConfigError. Network/transport errors are surfaced too so the
+        user isn't given a false "Valid" reading that fails on first real call.
         """
         try:
-            # Make a minimal request to validate the key
             self._client.models.list()
             return True
         except Exception as e:
-            error_msg = str(e).lower()
-            if "401" in error_msg or "unauthorized" in error_msg or "invalid" in error_msg:
+            error_msg = str(e)
+            lowered = error_msg.lower()
+            if "401" in lowered or "unauthorized" in lowered or "invalid api key" in lowered:
                 raise ProviderConfigError(
                     self.name,
-                    "Invalid API key. Check your key at https://openrouter.ai/keys"
+                    "Invalid API key. Check your key at https://openrouter.ai/keys",
                 )
-            # Other errors might be temporary, don't fail validation
-            logger.warning(f"API validation warning: {e}")
-            return True
+            if "403" in lowered or "forbidden" in lowered:
+                raise ProviderConfigError(
+                    self.name,
+                    "API key rejected (403). Check that it has access to chat completions.",
+                )
+            if "connection" in lowered or "timeout" in lowered or "network" in lowered:
+                raise ProviderConfigError(
+                    self.name,
+                    f"Could not reach OpenRouter to validate the key ({error_msg}). "
+                    "Check your internet connection.",
+                )
+            # Anything else: don't pretend it's valid.
+            raise ProviderConfigError(
+                self.name, f"Validation failed: {error_msg}"
+            )
+
+    def _supports_prompt_caching(self) -> bool:
+        """OpenRouter passes cache_control through to Anthropic models."""
+        return self.model.startswith("anthropic/")
+
+    def _with_cache_breakpoints(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Add Anthropic cache_control breakpoints to system prompt and last
+        tool/user message. Long stable prefixes (system + most of the history)
+        become cached; only the tail re-tokenizes each turn.
+        """
+        if not self._supports_prompt_caching() or not messages:
+            return messages
+
+        def add_cache(msg: dict[str, Any]) -> dict[str, Any]:
+            content = msg.get("content")
+            if not isinstance(content, str) or not content:
+                return msg
+            new = dict(msg)
+            new["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+            return new
+
+        out = [dict(m) for m in messages]
+        # Cache the system prompt (large + stable).
+        if out and out[0].get("role") == "system":
+            out[0] = add_cache(out[0])
+
+        # Cache the most recent non-assistant message so prior turns get reused.
+        for i in range(len(out) - 1, -1, -1):
+            if out[i].get("role") in ("user", "tool"):
+                if i != 0:  # don't double-mark when system is the only message
+                    out[i] = add_cache(out[i])
+                break
+        return out
 
     def _retry_request(self, func, *args, **kwargs):
         """Execute a request with retry logic."""
@@ -170,10 +222,12 @@ class OpenRouterProvider(LLMProvider):
         tools: Optional[list[dict[str, Any]]] = None,
     ) -> LLMResponse:
         """Send a chat request to OpenRouter with retry logic."""
+        cached_messages = self._with_cache_breakpoints(messages)
+
         def _make_request():
             kwargs: dict[str, Any] = {
                 "model": self.model,
-                "messages": messages,
+                "messages": cached_messages,
             }
             if tools:
                 kwargs["tools"] = tools
@@ -205,10 +259,12 @@ class OpenRouterProvider(LLMProvider):
     ) -> Generator[StreamChunk, None, None]:
         """Stream a chat response from OpenRouter."""
         try:
+            cached_messages = self._with_cache_breakpoints(messages)
             kwargs: dict[str, Any] = {
                 "model": self.model,
-                "messages": messages,
+                "messages": cached_messages,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             if tools:
                 kwargs["tools"] = tools
@@ -219,6 +275,12 @@ class OpenRouterProvider(LLMProvider):
             response = self._client.chat.completions.create(**kwargs)
 
             for chunk in response:
+                # Trailing usage-only chunk arrives after choices are done.
+                usage = getattr(chunk, "usage", None)
+                if usage and getattr(usage, "total_tokens", None):
+                    self._total_tokens += usage.total_tokens
+                    logger.debug(f"Streaming usage: total={usage.total_tokens}, cumulative={self._total_tokens}")
+
                 if not chunk.choices:
                     continue
 

@@ -13,6 +13,11 @@ import logging
 from typing import Any, Callable, Generator, Optional
 
 from codeagent.core.exceptions import AgentError, MaxIterationsError
+from codeagent.core.permissions import (
+    PermissionDecision,
+    PermissionManager,
+    PermissionPrompt,
+)
 from codeagent.core.prompts import get_system_prompt
 from codeagent.core.types import (
     LLMResponse,
@@ -44,6 +49,7 @@ class Agent:
         max_iterations: int = 25,
         on_tool_start: Optional[Callable[[ToolCall], None]] = None,
         on_tool_end: Optional[Callable[[ToolResult], None]] = None,
+        permission_prompt: Optional[PermissionPrompt] = None,
     ) -> None:
         """
         Initialize the agent.
@@ -62,6 +68,7 @@ class Agent:
         self._max_iterations = max_iterations
         self._on_tool_start = on_tool_start
         self._on_tool_end = on_tool_end
+        self._permissions = PermissionManager(prompt=permission_prompt)
 
         # Set working directory on tool registry for resolving relative paths
         self._tools.set_working_dir(working_dir)
@@ -224,6 +231,18 @@ class Agent:
         """Execute a single tool call."""
         logger.info(f"Executing tool: {tool_call.name}")
         logger.debug(f"Tool arguments: {tool_call.arguments}")
+
+        # Permission check for mutating tools
+        decision = self._permissions.check(tool_call.name, tool_call.arguments)
+        if decision == PermissionDecision.DENY:
+            denied = ToolResult(
+                tool_call_id=tool_call.id,
+                content="User denied permission to run this tool. Stop and ask the user how to proceed.",
+                is_error=True,
+            )
+            if self._on_tool_end:
+                self._on_tool_end(denied)
+            return denied
 
         # Callback for tool start
         if self._on_tool_start:

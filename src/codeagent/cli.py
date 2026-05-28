@@ -6,12 +6,21 @@ Modern, type-hint based CLI with auto-completion support.
 
 import logging
 import os
-import select
 import sys
-import termios
 import threading
-import tty
 from typing import Annotated, Optional
+
+# termios/tty/select are POSIX-only. On Windows we fall back to a no-op
+# escape listener so install + import still work.
+_POSIX = sys.platform != "win32"
+if _POSIX:
+    import select
+    import termios
+    import tty
+else:  # pragma: no cover - Windows fallback
+    select = None  # type: ignore[assignment]
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
 
 import typer
 from rich.console import Console
@@ -26,6 +35,7 @@ from codeagent.core.exceptions import (
     MaxIterationsError,
     ProviderConfigError,
 )
+from codeagent.core.permissions import PermissionDecision
 from codeagent.providers.factory import create_provider
 from codeagent.providers.base import LLMProvider
 from codeagent.tools import create_default_registry
@@ -64,6 +74,10 @@ class EscapeListener:
     def start(self) -> None:
         """Start listening for Escape key."""
         self._interrupted = False
+        # On Windows we can't put stdin in cbreak mode the same way, so the
+        # escape listener becomes a no-op. The user can still Ctrl+C.
+        if not _POSIX:
+            return
         self._running = True
         self._thread = threading.Thread(target=self._listen_loop, daemon=True)
         self._thread.start()
@@ -80,7 +94,9 @@ class EscapeListener:
         self._interrupted = False
 
     def _listen_loop(self) -> None:
-        """Background thread that listens for Escape key."""
+        """Background thread that listens for Escape key (POSIX only)."""
+        if not _POSIX:
+            return
         try:
             # Save terminal settings
             if sys.stdin.isatty():
@@ -110,6 +126,8 @@ class EscapeListener:
 
     def _restore_terminal(self) -> None:
         """Restore terminal settings."""
+        if not _POSIX:
+            return
         try:
             if self._old_settings and sys.stdin.isatty():
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self._old_settings)
@@ -401,10 +419,19 @@ def select_and_download_model() -> str:
 # Welcome Screen
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _divider_width() -> int:
+    try:
+        import shutil as _shutil
+        return max(20, min(_shutil.get_terminal_size().columns - 4, 60))
+    except Exception:
+        return 40
+
+
 def print_welcome(model: str, path: str) -> None:
     """Print welcome screen."""
     home = os.path.expanduser("~")
     display_path = path.replace(home, "~") if path.startswith(home) else path
+    rule = "─" * _divider_width()
 
     console.print()
     console.print("[bold bright_magenta]  ◆ CodeAgent[/bold bright_magenta]", end="")
@@ -413,14 +440,120 @@ def print_welcome(model: str, path: str) -> None:
     console.print(f"  [dim]Model:[/dim]  [bright_cyan]{model}[/bright_cyan]")
     console.print(f"  [dim]Path:[/dim]   [white]{display_path}[/white]")
     console.print()
-    console.print("  [dim]─────────────────────────────────────[/dim]")
+    console.print(f"  [dim]{rule}[/dim]")
     console.print()
-    console.print("  [dim]Try:[/dim] [white]\"read my code\"[/white]  │  [white]\"fix bug\"[/white]  │  [white]\"run tests\"[/white]")
+    console.print("  [dim]Commands:[/dim] [yellow]/help[/yellow]  [yellow]/clear[/yellow]  [yellow]/tokens[/yellow]  [yellow]/todos[/yellow]  [yellow]/exit[/yellow]")
+    console.print("  [dim]Esc to interrupt · Ctrl+D to exit[/dim]")
     console.print()
-    console.print("  [dim]Commands:[/dim] [yellow]exit[/yellow]  [yellow]clear[/yellow]  [yellow]help[/yellow]")
+    console.print(f"  [dim]{rule}[/dim]")
     console.print()
-    console.print("  [dim]─────────────────────────────────────[/dim]")
+
+
+def _print_help() -> None:
+    """Print the in-session help block."""
     console.print()
+    console.print("  [bold]Slash commands[/bold] [dim](slash optional)[/dim]")
+    console.print("    [yellow]/help[/yellow]     [dim]show this help[/dim]")
+    console.print("    [yellow]/clear[/yellow]    [dim]reset conversation and todos[/dim]")
+    console.print("    [yellow]/tokens[/yellow]   [dim]show token usage this session[/dim]")
+    console.print("    [yellow]/todos[/yellow]    [dim]show the current todo list[/dim]")
+    console.print("    [yellow]/exit[/yellow]     [dim]quit (also: /quit, /q, Ctrl+D)[/dim]")
+    console.print()
+    console.print("  [bold]While the agent is working[/bold]")
+    console.print("    [dim]Esc[/dim]       [dim]interrupt the current response[/dim]")
+    console.print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Permission prompt
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _tool_action_label(tool_name: str) -> str:
+    """Short verb/label for the prompt header."""
+    labels = {
+        "write_file": "Write",
+        "edit_file": "Edit",
+        "delete": "Delete",
+        "copy": "Copy",
+        "move": "Move",
+        "mkdir": "Mkdir",
+        "bash": "Run shell command",
+        "http_request": "HTTP request",
+    }
+    if tool_name in labels:
+        return labels[tool_name]
+    if tool_name.startswith("git_"):
+        return f"Git {tool_name[4:]}"
+    if tool_name.startswith("npm_"):
+        return f"npm {tool_name[4:]}"
+    if tool_name.startswith("pip_"):
+        return f"pip {tool_name[4:]}"
+    if tool_name.startswith("cargo_"):
+        return f"cargo {tool_name[6:]}"
+    if tool_name.startswith("env_"):
+        return f"env {tool_name[4:]}"
+    return tool_name
+
+
+def _format_tool_payload(tool_name: str, args: dict) -> list[str]:
+    """Render the tool's args as one or more display lines (no truncation for bash)."""
+    if tool_name in ("write_file", "edit_file", "delete", "mkdir"):
+        return [args.get("file_path") or args.get("path") or ""]
+    if tool_name in ("copy", "move"):
+        return [f"{args.get('source', '')} → {args.get('destination', '')}"]
+    if tool_name == "bash":
+        cmd = args.get("command", "")
+        return cmd.splitlines() or [""]
+    if tool_name == "http_request":
+        return [f"{args.get('method', 'GET')} {args.get('url', '')}"]
+    if tool_name in ("npm_install", "pip_install", "pip_uninstall", "cargo_add"):
+        return [str(args.get("packages", ""))]
+    if tool_name == "npm_run":
+        return [str(args.get("script", ""))]
+    if tool_name.startswith("git_"):
+        bits = [f"{k}={v}" for k, v in args.items() if v is not None]
+        return [" ".join(bits)] if bits else []
+    if tool_name.startswith("env_"):
+        return [str(args.get("name") or args.get("path") or "")]
+    return []
+
+
+def ask_permission(tool_name: str, args: dict) -> PermissionDecision:
+    """Interactively ask the user to approve a mutating tool call.
+
+    Default is **deny** — safer when the user just hits Enter.
+    """
+    label = _tool_action_label(tool_name)
+    payload_lines = _format_tool_payload(tool_name, args)
+
+    console.print()
+    console.print(f"  [bold yellow]●[/bold yellow] [bold]{label}?[/bold]")
+    for line in payload_lines:
+        # Pre-escape Rich markup so `[` in the payload doesn't break rendering.
+        from rich.markup import escape as _escape
+        console.print(f"    [dim]{_escape(line)}[/dim]")
+    console.print()
+    console.print(f"    [cyan]y[/cyan] yes, once")
+    console.print(f"    [cyan]a[/cyan] yes, and always allow [bold]{tool_name}[/bold] this session")
+    console.print(f"    [cyan]n[/cyan] no [dim](default)[/dim]")
+    console.print()
+
+    try:
+        choice = Prompt.ask(
+            "  [bold]›[/bold]",
+            choices=["y", "a", "n"],
+            default="n",
+            show_default=False,
+            show_choices=False,
+        )
+    except (EOFError, KeyboardInterrupt):
+        return PermissionDecision.DENY
+
+    if choice == "y":
+        return PermissionDecision.ALLOW_ONCE
+    if choice == "a":
+        return PermissionDecision.ALLOW_SESSION
+    return PermissionDecision.DENY
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -463,6 +596,26 @@ def start_session(verbose: bool = False) -> None:
     set_edit_diff_callback(on_edit_diff)
     set_write_diff_callback(on_write_diff)
 
+    # The escape listener puts stdin in cbreak mode during streaming; pause it
+    # around the permission prompt so the user can type a normal answer.
+    session_state = {"escape_listener": None, "thinking": False}
+
+    def permission_prompt(tool_name: str, args: dict) -> PermissionDecision:
+        listener = session_state.get("escape_listener")
+        was_thinking = session_state.get("thinking", False)
+        if was_thinking:
+            agent_console.stop_thinking()
+        if listener is not None:
+            listener.stop()
+        try:
+            return ask_permission(tool_name, args)
+        finally:
+            if listener is not None:
+                listener.reset()
+                listener.start()
+            if was_thinking:
+                agent_console.start_thinking()
+
     agent = Agent(
         provider=provider,
         tools=tools,
@@ -470,6 +623,7 @@ def start_session(verbose: bool = False) -> None:
         max_iterations=config.max_iterations,
         on_tool_start=lambda tc: agent_console.tool_start(tc.name, tc.arguments),
         on_tool_end=lambda tr: agent_console.tool_result(tr.content, tr.is_error),
+        permission_prompt=permission_prompt,
     )
 
     print_welcome(provider.model, working_dir)
@@ -482,25 +636,48 @@ def start_session(verbose: bool = False) -> None:
             if not user_input.strip():
                 continue
 
-            cmd = user_input.strip().lower()
+            cmd = user_input.strip().lower().lstrip("/")
             if cmd in ("exit", "quit", "q"):
                 break
-            elif cmd == "clear":
+            elif cmd in ("clear", "reset"):
                 agent.reset()
-                console.print("[dim]History cleared[/dim]")
+                from codeagent.tools.todo import reset_todos
+                reset_todos()
+                console.print("[dim]History cleared[/dim]\n")
+                continue
+            elif cmd in ("tokens", "cost", "usage"):
+                used = provider.total_tokens_used
+                if used == 0:
+                    console.print("[dim]No token usage tracked yet (provider may not report it).[/dim]\n")
+                else:
+                    console.print(f"[dim]Total tokens this session:[/dim] [bold]{used:,}[/bold]\n")
+                continue
+            elif cmd in ("todos", "todo"):
+                from codeagent.tools.todo import get_todos
+                todos = get_todos()
+                if not todos:
+                    console.print("[dim]No todos yet.[/dim]\n")
+                else:
+                    icons = {"pending": "☐", "in_progress": "◐", "completed": "☑"}
+                    for t in todos:
+                        icon = icons.get(t["status"], "☐")
+                        style = "dim" if t["status"] == "completed" else (
+                            "bold yellow" if t["status"] == "in_progress" else "white"
+                        )
+                        console.print(f"  [{style}]{icon} {t['content']}[/{style}]")
+                    console.print()
                 continue
             elif cmd == "help":
-                console.print("[dim]exit[/dim]   quit")
-                console.print("[dim]clear[/dim]  reset history")
-                console.print("[dim]help[/dim]   this message")
-                console.print()
+                _print_help()
                 continue
 
             # Start escape listener for interrupt
             escape_listener = EscapeListener()
             escape_listener.start()
+            session_state["escape_listener"] = escape_listener
 
             agent_console.start_thinking()
+            session_state["thinking"] = True
 
             try:
                 first_chunk = True
@@ -513,11 +690,20 @@ def start_session(verbose: bool = False) -> None:
 
                     if first_chunk:
                         agent_console.assistant_start()
+                        session_state["thinking"] = False
                         first_chunk = False
                     agent_console.assistant_stream(chunk)
 
+                    # Keep status bar token count current while streaming.
+                    used = provider.total_tokens_used
+                    if used:
+                        agent_console.update_tokens(used)
+
                 if not escape_listener.interrupted:
                     agent_console.assistant_end()
+                else:
+                    # ensure a blank line after the interrupt warning
+                    console.print()
             except MaxIterationsError:
                 agent_console.stop_thinking()
                 agent_console.error("Max iterations reached.")
@@ -527,6 +713,8 @@ def start_session(verbose: bool = False) -> None:
             finally:
                 # Always stop the escape listener
                 escape_listener.stop()
+                session_state["escape_listener"] = None
+                session_state["thinking"] = False
 
         except KeyboardInterrupt:
             console.print()

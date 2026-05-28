@@ -86,7 +86,9 @@ class StatusBar:
         """Stop and clear the status bar."""
         self._active = False
         if self._thread:
-            self._thread.join(timeout=0.3)
+            self._thread.join(timeout=0.5)
+        # Clear *after* the redraw thread has fully stopped, otherwise a
+        # late-arriving redraw can leave a partial status line behind.
         self._clear_status_line()
 
     def _get_elapsed(self) -> str:
@@ -122,43 +124,33 @@ class StatusBar:
         sys.stdout.flush()
 
     def _render_status(self) -> str:
-        """Render the status bar content."""
+        """Render the status bar content as a single line, truncated to width."""
         with self._lock:
             status = self._status_text
-            todo = self._current_todo
             tokens = self._token_count
             elapsed = self._get_elapsed()
 
-        # Build the status line
-        parts = []
-
-        # Main status with asterisk
-        parts.append(f"{self.SALMON}✱{self.RESET} {self.SALMON}{status}…{self.RESET}")
-
-        # Controls and stats
-        info_parts = ["esc to interrupt"]
-
-        # Elapsed time
-        info_parts.append(elapsed)
-
-        # Token count if available
+        info_parts = ["esc to interrupt", elapsed]
         if tokens > 0:
             if tokens >= 1000:
-                token_str = f"↓ {tokens / 1000:.1f}k tokens"
+                info_parts.append(f"↓ {tokens / 1000:.1f}k tokens")
             else:
-                token_str = f"↓ {tokens} tokens"
-            info_parts.append(token_str)
+                info_parts.append(f"↓ {tokens} tokens")
 
-        parts.append(f"{self.DIM}({' · '.join(info_parts)}){self.RESET}")
+        # Build plain (uncolored) version for width calculation.
+        plain = f"✱ {status}… ({' · '.join(info_parts)})"
+        width = self._get_terminal_width()
+        if len(plain) > width - 1:
+            plain = plain[: max(0, width - 2)] + "…"
+            # When truncated, fall back to a plain line so we don't paint
+            # half-finished ANSI escape sequences.
+            return f"{self.SALMON}{plain}{self.RESET}"
 
-        line1 = " ".join(parts)
-
-        # Todo line if present
-        if todo:
-            line2 = f"\n{self.DIM}└─ ☐ {todo}{self.RESET}"
-            return line1 + line2
-
-        return line1
+        colored = (
+            f"{self.SALMON}✱{self.RESET} {self.SALMON}{status}…{self.RESET} "
+            f"{self.DIM}({' · '.join(info_parts)}){self.RESET}"
+        )
+        return colored
 
     def _update_loop(self) -> None:
         """Update the status bar periodically."""
@@ -194,7 +186,6 @@ class Console:
     def __init__(self) -> None:
         self._console = RichConsole(highlight=False)
         self._thinking = False
-        self._think_thread: Optional[threading.Thread] = None
         self._tool_running = False
         self._tool_thread: Optional[threading.Thread] = None
         self._current_tool_line: str = ""
@@ -227,34 +218,23 @@ class Console:
 
     def start_thinking(self, todo: Optional[str] = None) -> None:
         """Start the thinking indicator with status bar."""
+        if self._thinking:
+            return  # already running
         self._thinking = True
         self._session_start = datetime.now()
 
-        # Start status bar
+        # Pick a single word for this turn. Cycling every 800ms is jittery
+        # noise; a stable word reads as a steady "still working" signal.
         word = random.choice(THINKING_WORDS)
         self._status_bar.start(initial_status=word, todo=todo)
-
-        # Start word cycling thread
-        self._think_thread = threading.Thread(target=self._think_loop, daemon=True)
-        self._think_thread.start()
 
     def stop_thinking(self) -> None:
         """Stop the thinking indicator."""
         if self._thinking:
             self._thinking = False
             self._status_bar.stop()
-            # Clear the line
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
-            if self._think_thread:
-                self._think_thread.join(timeout=0.3)
-
-    def _think_loop(self) -> None:
-        """Cycle through thinking words and update status bar."""
-        while self._thinking:
-            word = random.choice(THINKING_WORDS)
-            self._status_bar.update(status=word)
-            time.sleep(0.8)
 
     def update_tokens(self, tokens: int) -> None:
         """Update the token count in status bar."""
@@ -401,6 +381,10 @@ class Console:
             extra = f" {name}" if name else ""
             return cyan, f"{bold}Env {action}{reset}{dim}{extra}{reset}"
 
+        # Planning
+        elif tool_name == "todo_write":
+            return purple, f"{bold}Update todos{reset}"
+
         # File operations (delete, copy, move, etc.)
         elif tool_name in ("delete", "copy", "move", "mkdir", "ls"):
             path = args.get("path", "") or args.get("source", "") or args.get("file_path", "")
@@ -480,11 +464,36 @@ class Console:
         """Show tool result - stop blinking and show errors."""
         self.stop_tool_indicator()  # Stop blinking when tool finishes
 
-        if is_error:
-            first_line = result.split("\n")[0]
-            if len(first_line) > 80:
-                first_line = first_line[:80] + "..."
-            print(f"\033[31m  └─ {first_line}\033[0m")  # Red with indent
+        if not is_error:
+            return
+
+        # Show up to MAX_LINES of the error; soft-wrap each line to terminal
+        # width. Anything beyond that gets a "(N more lines)" footer.
+        try:
+            width = max(40, shutil.get_terminal_size().columns - 6)
+        except Exception:
+            width = 80
+
+        MAX_LINES = 8
+        raw_lines = [ln.rstrip() for ln in result.splitlines() if ln.strip()]
+
+        rendered: list[str] = []
+        for ln in raw_lines:
+            while len(ln) > width:
+                rendered.append(ln[:width])
+                ln = ln[width:]
+            rendered.append(ln)
+            if len(rendered) >= MAX_LINES + 1:
+                break
+
+        overflow = len(rendered) > MAX_LINES
+        shown = rendered[:MAX_LINES]
+        for i, ln in enumerate(shown):
+            prefix = "  └─" if i == 0 else "     "
+            print(f"\033[31m{prefix} {ln}\033[0m")
+        if overflow:
+            extra = len(raw_lines) - len(shown)
+            print(f"\033[2m     ({extra} more line{'s' if extra != 1 else ''} omitted)\033[0m")
 
     def info(self, message: str) -> None:
         """Print info message."""
@@ -575,9 +584,13 @@ class DiffDisplay:
         added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
         removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
 
-        # Print header with yellow bullet (like Claude Code)
+        # If old content was empty, this is a create, not an update.
+        is_create = not old_content.strip()
         short_path = self._shorten_path(file_path)
-        header = f"{self.YELLOW}●{self.RESET} {self.BOLD}Update{self.RESET}({short_path})"
+        if is_create:
+            header = f"{self.GREEN}●{self.RESET} {self.BOLD}Create{self.RESET}({short_path})"
+        else:
+            header = f"{self.YELLOW}●{self.RESET} {self.BOLD}Update{self.RESET}({short_path})"
 
         # Summary
         summary_parts = []

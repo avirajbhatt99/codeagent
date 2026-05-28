@@ -64,6 +64,7 @@ from codeagent.tools.env import (
     EnvUnsetTool,
     EnvLoadTool,
 )
+from codeagent.tools.todo import TodoWriteTool
 
 
 def create_default_registry() -> ToolRegistry:
@@ -139,6 +140,9 @@ def create_default_registry() -> ToolRegistry:
     registry.register(EnvUnsetTool())
     registry.register(EnvLoadTool())
 
+    # Planning
+    registry.register(TodoWriteTool())
+
     return registry
 
 
@@ -204,4 +208,6 @@ __all__ = [
     "EnvSetTool",
     "EnvUnsetTool",
     "EnvLoadTool",
+    # Planning
+    "TodoWriteTool",
 ]

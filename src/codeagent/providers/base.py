@@ -103,6 +103,11 @@ class LLMProvider(ABC):
         return False
 
     @property
+    def total_tokens_used(self) -> int:
+        """Cumulative tokens used by this provider instance. Override if tracked."""
+        return 0
+
+    @property
     def supports_tools(self) -> bool:
         """Check if this provider supports tool calling."""
         # Most modern providers do
