@@ -161,10 +161,10 @@ Mutating tools (writes, shell, destructive git, network requests) ask for permis
 
 ### Groq (cloud) — fastest
 
-- Very low-latency inference on open-weight models (Llama, Qwen, DeepSeek, Mixtral, Gemma)
-- Reliable tool-call support
+- Very low-latency inference on open-weight models
 - Get an API key: <https://console.groq.com/keys>
-- Default model: `llama-3.3-70b-versatile`
+- Default model: `openai/gpt-oss-120b` (verified for reliable tool-call behavior)
+- Other tested models: `openai/gpt-oss-20b`, `llama-3.3-70b-versatile`
 
 ### OpenRouter (cloud)
 

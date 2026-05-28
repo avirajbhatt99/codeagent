@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ultracode"
-version = "0.2.1"
+version = "0.2.2"
 description = "AI-powered coding assistant CLI - use local models (Ollama) or cloud providers (OpenRouter, HuggingFace)"
 readme = "README.md"
 license = "MIT"

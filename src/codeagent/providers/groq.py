@@ -27,16 +27,14 @@ class GroqProvider(LLMProvider):
     name = "groq"
     BASE_URL = "https://api.groq.com/openai/v1"
 
-    # Models on Groq with reliable tool-call support.
+    # Models on Groq verified for clean tool-call behavior with our 48-tool
+    # schema as of 0.2.2. Avoid llama-3.3-70b-versatile (tool-name concat bug)
+    # and small-context models (413 with our schema).
     RECOMMENDED_MODELS = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
         "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "llama-3.1-70b-versatile",
-        "qwen-2.5-32b",
-        "qwen-2.5-coder-32b",
-        "deepseek-r1-distill-llama-70b",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
     ]
 
     def __init__(
@@ -68,7 +66,7 @@ class GroqProvider(LLMProvider):
 
     @classmethod
     def get_default_model(cls) -> str:
-        return "llama-3.3-70b-versatile"
+        return "openai/gpt-oss-120b"
 
     @classmethod
     def list_models(cls) -> list[str]:
@@ -193,7 +191,15 @@ class GroqProvider(LLMProvider):
                             }
                         if tc.function:
                             if tc.function.name:
-                                tool_calls_buffer[idx]["name"] = tc.function.name
+                                name = tc.function.name
+                                # Some Groq responses concatenate the JSON
+                                # args into the name field. Split if so.
+                                if "{" in name:
+                                    pure_name, _, tail = name.partition("{")
+                                    tool_calls_buffer[idx]["name"] = pure_name.strip()
+                                    tool_calls_buffer[idx]["arguments"] += "{" + tail
+                                else:
+                                    tool_calls_buffer[idx]["name"] = name
                             if tc.function.arguments:
                                 tool_calls_buffer[idx]["arguments"] += tc.function.arguments
 
