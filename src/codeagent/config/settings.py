@@ -20,6 +20,7 @@ class ProviderType(str, Enum):
     OLLAMA = "ollama"
     OPENROUTER = "openrouter"
     HUGGINGFACE = "huggingface"
+    GROQ = "groq"
 
 
 class Settings(BaseSettings):
@@ -56,6 +57,10 @@ class Settings(BaseSettings):
     huggingface_api_key: Optional[SecretStr] = Field(
         default=None,
         description="HuggingFace API token",
+    )
+    groq_api_key: Optional[SecretStr] = Field(
+        default=None,
+        description="Groq API key",
     )
 
     # Ollama settings
@@ -112,6 +117,7 @@ class Settings(BaseSettings):
         key_map = {
             ProviderType.OPENROUTER: self.openrouter_api_key,
             ProviderType.HUGGINGFACE: self.huggingface_api_key,
+            ProviderType.GROQ: self.groq_api_key,
         }
         secret = key_map.get(provider)
         return secret.get_secret_value() if secret else None

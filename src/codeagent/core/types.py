@@ -35,13 +35,27 @@ class ToolCall:
     arguments: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
+        """Convert to dictionary for serialization.
+
+        OpenAI's tool-call spec requires `function.arguments` to be a JSON
+        string. Most providers (OpenRouter, OpenAI, Ollama) accept either a
+        dict or a string, but Groq strictly enforces string-only — so we
+        always serialize as a string here.
+        """
+        import json as _json
+
+        args = self.arguments
+        if not isinstance(args, str):
+            try:
+                args = _json.dumps(args)
+            except (TypeError, ValueError):
+                args = "{}"
         return {
             "id": self.id,
             "type": "function",
             "function": {
                 "name": self.name,
-                "arguments": self.arguments,
+                "arguments": args,
             },
         }
 

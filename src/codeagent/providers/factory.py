@@ -10,6 +10,7 @@ from typing import Callable, Optional, Type
 from codeagent.config.settings import ProviderType, Settings
 from codeagent.core.exceptions import ProviderConfigError, ProviderNotFoundError
 from codeagent.providers.base import LLMProvider
+from codeagent.providers.groq import GroqProvider
 from codeagent.providers.huggingface import HuggingFaceProvider
 from codeagent.providers.ollama import OllamaProvider
 from codeagent.providers.openrouter import OpenRouterProvider
@@ -27,6 +28,7 @@ class ProviderFactory:
         ProviderType.OLLAMA: OllamaProvider,
         ProviderType.OPENROUTER: OpenRouterProvider,
         ProviderType.HUGGINGFACE: HuggingFaceProvider,
+        ProviderType.GROQ: GroqProvider,
     }
 
     @classmethod
@@ -98,7 +100,11 @@ class ProviderFactory:
         if provider_type == ProviderType.OLLAMA:
             if "host" in kwargs:
                 init_kwargs["host"] = kwargs["host"]
-        elif provider_type in (ProviderType.OPENROUTER, ProviderType.HUGGINGFACE):
+        elif provider_type in (
+            ProviderType.OPENROUTER,
+            ProviderType.HUGGINGFACE,
+            ProviderType.GROQ,
+        ):
             if not api_key:
                 raise ProviderConfigError(
                     provider_type.value,

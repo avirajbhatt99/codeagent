@@ -20,6 +20,7 @@ class StoredConfig(BaseModel):
     ollama_host: str = "http://localhost:11434"
     openrouter_api_key: Optional[str] = None
     huggingface_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
     max_iterations: int = 25
     timeout: int = 120
 
@@ -123,6 +124,8 @@ class ConfigManager:
             return config.openrouter_api_key
         elif provider == "huggingface":
             return config.huggingface_api_key
+        elif provider == "groq":
+            return config.groq_api_key
         return None
 
     def set_api_key(self, provider: str, key: str) -> None:
@@ -131,6 +134,8 @@ class ConfigManager:
             self.set("openrouter_api_key", key)
         elif provider == "huggingface":
             self.set("huggingface_api_key", key)
+        elif provider == "groq":
+            self.set("groq_api_key", key)
 
     def is_configured(self) -> bool:
         """Check if basic configuration is done."""
@@ -145,6 +150,8 @@ class ConfigManager:
             return config.openrouter_api_key is not None
         if config.provider == "huggingface":
             return config.huggingface_api_key is not None
+        if config.provider == "groq":
+            return config.groq_api_key is not None
 
         return False
 

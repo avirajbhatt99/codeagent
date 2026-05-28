@@ -159,6 +159,13 @@ Mutating tools (writes, shell, destructive git, network requests) ask for permis
 - Recommended: `qwen2.5-coder:7b`, `llama3.1:8b`, `mistral:7b`
 - **Tool calling is model- and version-dependent on Ollama.** If the agent returns JSON as text instead of actually invoking tools, your model isn't emitting structured `tool_calls`. Try a different model or upgrade Ollama. Cloud providers (OpenRouter, HuggingFace) are more reliable for tool use.
 
+### Groq (cloud) — fastest
+
+- Very low-latency inference on open-weight models (Llama, Qwen, DeepSeek, Mixtral, Gemma)
+- Reliable tool-call support
+- Get an API key: <https://console.groq.com/keys>
+- Default model: `llama-3.3-70b-versatile`
+
 ### OpenRouter (cloud)
 
 - Access GPT-4, Claude, Llama, DeepSeek, and more

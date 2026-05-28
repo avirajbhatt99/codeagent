@@ -195,6 +195,23 @@ PROVIDERS_INFO = {
             "mistralai/Mixtral-8x7B-Instruct-v0.1",
         ],
     },
+    "groq": {
+        "name": "Groq (Cloud)",
+        "description": "Very fast inference on open-weight models.",
+        "needs_key": True,
+        "key_url": "https://console.groq.com/keys",
+        "default_model": "llama-3.3-70b-versatile",
+        "models": [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama-3.1-70b-versatile",
+            "qwen-2.5-32b",
+            "qwen-2.5-coder-32b",
+            "deepseek-r1-distill-llama-70b",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
+        ],
+    },
 }
 
 
@@ -262,6 +279,8 @@ def create_provider_from_config(config: StoredConfig) -> LLMProvider:
         api_key = config.openrouter_api_key
     elif config.provider == "huggingface":
         api_key = config.huggingface_api_key
+    elif config.provider == "groq":
+        api_key = config.groq_api_key
 
     return create_provider(
         provider=config.provider,
@@ -286,13 +305,14 @@ def run_setup_wizard() -> StoredConfig:
     table.add_column("Provider")
     table.add_column("Description", style="dim")
     table.add_row("1", "Ollama (Local)", "Free, private, runs locally")
-    table.add_row("2", "OpenRouter", "Cloud API, many models")
-    table.add_row("3", "HuggingFace", "Cloud API, open models")
+    table.add_row("2", "Groq", "Cloud API, ultra-fast open models")
+    table.add_row("3", "OpenRouter", "Cloud API, many models")
+    table.add_row("4", "HuggingFace", "Cloud API, open models")
     console.print(table)
     console.print()
 
-    choice = Prompt.ask("Select", choices=["1", "2", "3"], default="1")
-    provider_map = {"1": "ollama", "2": "openrouter", "3": "huggingface"}
+    choice = Prompt.ask("Select", choices=["1", "2", "3", "4"], default="1")
+    provider_map = {"1": "ollama", "2": "groq", "3": "openrouter", "4": "huggingface"}
     provider = provider_map[choice]
     provider_info = PROVIDERS_INFO[provider]
     console.print(f"\n[green]✓[/green] {provider_info['name']}\n")
@@ -314,6 +334,9 @@ def run_setup_wizard() -> StoredConfig:
                 if provider == "openrouter":
                     from codeagent.providers.openrouter import OpenRouterProvider
                     OpenRouterProvider(api_key=api_key).validate_api_key()
+                elif provider == "groq":
+                    from codeagent.providers.groq import GroqProvider
+                    GroqProvider(api_key=api_key).validate_api_key()
                 console.print("[green]✓[/green] Valid\n")
                 break
             except ProviderConfigError as e:
@@ -377,6 +400,7 @@ def run_setup_wizard() -> StoredConfig:
         model=model,
         openrouter_api_key=api_key if provider == "openrouter" else None,
         huggingface_api_key=api_key if provider == "huggingface" else None,
+        groq_api_key=api_key if provider == "groq" else None,
     )
     manager = get_config_manager()
     manager.save(config)
@@ -817,13 +841,15 @@ def config_cmd(
         console.print(f"[green]✓[/green] Provider: {provider}")
         console.print(f"[green]✓[/green] Model: {cfg.model}")
 
-        if provider in ("openrouter", "huggingface") and old_provider == "ollama":
+        if provider in ("openrouter", "huggingface", "groq") and old_provider == "ollama":
             console.print(f"\n[yellow]API key required[/yellow]")
             new_key = Prompt.ask("API key", password=True)
             if provider == "openrouter":
                 cfg.openrouter_api_key = new_key
-            else:
+            elif provider == "huggingface":
                 cfg.huggingface_api_key = new_key
+            else:
+                cfg.groq_api_key = new_key
 
     if model:
         cfg.model = model
@@ -836,8 +862,10 @@ def config_cmd(
             new_key = Prompt.ask(f"API key for {cfg.provider}", password=True)
             if cfg.provider == "openrouter":
                 cfg.openrouter_api_key = new_key
-            else:
+            elif cfg.provider == "huggingface":
                 cfg.huggingface_api_key = new_key
+            elif cfg.provider == "groq":
+                cfg.groq_api_key = new_key
             console.print("[green]✓[/green] API key updated")
 
     if provider or model or api_key:
@@ -856,6 +884,8 @@ def config_cmd(
             table.add_row("API Key", "✓ Set" if cfg.openrouter_api_key else "✗ Not set")
         elif cfg.provider == "huggingface":
             table.add_row("API Key", "✓ Set" if cfg.huggingface_api_key else "✗ Not set")
+        elif cfg.provider == "groq":
+            table.add_row("API Key", "✓ Set" if cfg.groq_api_key else "✗ Not set")
 
         console.print(table)
         console.print()
