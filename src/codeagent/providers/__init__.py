@@ -5,6 +5,8 @@ from codeagent.providers.factory import ProviderFactory, create_provider
 from codeagent.providers.ollama import OllamaProvider
 from codeagent.providers.openrouter import OpenRouterProvider
 from codeagent.providers.huggingface import HuggingFaceProvider
+from codeagent.providers.groq import GroqProvider
+from codeagent.providers.freellmapi import FreeLLMAPIProvider
 
 __all__ = [
     "LLMProvider",
@@ -13,4 +15,6 @@ __all__ = [
     "OllamaProvider",
     "OpenRouterProvider",
     "HuggingFaceProvider",
+    "GroqProvider",
+    "FreeLLMAPIProvider",
 ]

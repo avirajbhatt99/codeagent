@@ -21,6 +21,8 @@ class StoredConfig(BaseModel):
     openrouter_api_key: Optional[str] = None
     huggingface_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None
+    freellmapi_api_key: Optional[str] = None
+    freellmapi_base_url: str = "http://localhost:3001/v1"
     max_iterations: int = 25
     timeout: int = 120
 
@@ -126,6 +128,8 @@ class ConfigManager:
             return config.huggingface_api_key
         elif provider == "groq":
             return config.groq_api_key
+        elif provider == "freellmapi":
+            return config.freellmapi_api_key
         return None
 
     def set_api_key(self, provider: str, key: str) -> None:
@@ -136,6 +140,8 @@ class ConfigManager:
             self.set("huggingface_api_key", key)
         elif provider == "groq":
             self.set("groq_api_key", key)
+        elif provider == "freellmapi":
+            self.set("freellmapi_api_key", key)
 
     def is_configured(self) -> bool:
         """Check if basic configuration is done."""
@@ -152,6 +158,8 @@ class ConfigManager:
             return config.huggingface_api_key is not None
         if config.provider == "groq":
             return config.groq_api_key is not None
+        if config.provider == "freellmapi":
+            return config.freellmapi_api_key is not None
 
         return False
 

@@ -10,6 +10,7 @@ from typing import Callable, Optional, Type
 from codeagent.config.settings import ProviderType, Settings
 from codeagent.core.exceptions import ProviderConfigError, ProviderNotFoundError
 from codeagent.providers.base import LLMProvider
+from codeagent.providers.freellmapi import FreeLLMAPIProvider
 from codeagent.providers.groq import GroqProvider
 from codeagent.providers.huggingface import HuggingFaceProvider
 from codeagent.providers.ollama import OllamaProvider
@@ -29,6 +30,7 @@ class ProviderFactory:
         ProviderType.OPENROUTER: OpenRouterProvider,
         ProviderType.HUGGINGFACE: HuggingFaceProvider,
         ProviderType.GROQ: GroqProvider,
+        ProviderType.FREELLMAPI: FreeLLMAPIProvider,
     }
 
     @classmethod
@@ -104,6 +106,7 @@ class ProviderFactory:
             ProviderType.OPENROUTER,
             ProviderType.HUGGINGFACE,
             ProviderType.GROQ,
+            ProviderType.FREELLMAPI,
         ):
             if not api_key:
                 raise ProviderConfigError(
@@ -111,6 +114,8 @@ class ProviderFactory:
                     "API key is required for this provider",
                 )
             init_kwargs["api_key"] = api_key
+            if provider_type == ProviderType.FREELLMAPI and kwargs.get("base_url"):
+                init_kwargs["base_url"] = kwargs["base_url"]
 
         return provider_class(**init_kwargs)  # type: ignore
 
@@ -139,6 +144,8 @@ class ProviderFactory:
         kwargs: dict[str, object] = {}
         if provider_type == ProviderType.OLLAMA:
             kwargs["host"] = settings.ollama_host
+        elif provider_type == ProviderType.FREELLMAPI:
+            kwargs["base_url"] = settings.freellmapi_base_url
 
         return cls.create(
             provider_type=provider_type,

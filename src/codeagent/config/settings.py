@@ -21,6 +21,7 @@ class ProviderType(str, Enum):
     OPENROUTER = "openrouter"
     HUGGINGFACE = "huggingface"
     GROQ = "groq"
+    FREELLMAPI = "freellmapi"
 
 
 class Settings(BaseSettings):
@@ -62,11 +63,21 @@ class Settings(BaseSettings):
         default=None,
         description="Groq API key",
     )
+    freellmapi_api_key: Optional[SecretStr] = Field(
+        default=None,
+        description="freellmapi unified API key",
+    )
 
     # Ollama settings
     ollama_host: str = Field(
         default="http://localhost:11434",
         description="Ollama server URL",
+    )
+
+    # freellmapi settings (self-hosted, so the URL varies per deployment)
+    freellmapi_base_url: str = Field(
+        default="http://localhost:3001/v1",
+        description="Base URL of your freellmapi instance",
     )
 
     # Agent settings
@@ -118,6 +129,7 @@ class Settings(BaseSettings):
             ProviderType.OPENROUTER: self.openrouter_api_key,
             ProviderType.HUGGINGFACE: self.huggingface_api_key,
             ProviderType.GROQ: self.groq_api_key,
+            ProviderType.FREELLMAPI: self.freellmapi_api_key,
         }
         secret = key_map.get(provider)
         return secret.get_secret_value() if secret else None

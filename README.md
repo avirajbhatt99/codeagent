@@ -1,6 +1,6 @@
 # ultracode
 
-AI-powered coding assistant CLI. Works with local models (Ollama) or cloud providers (OpenRouter, HuggingFace).
+AI-powered coding assistant CLI. Works with local models (Ollama), cloud providers (Groq, OpenRouter, HuggingFace), or a self-hosted [freellmapi](https://github.com/tashfeenahmed/freellmapi) proxy.
 
 **No environment variables needed** - everything is configured through simple CLI prompts.
 
@@ -177,6 +177,14 @@ Mutating tools (writes, shell, destructive git, network requests) ask for permis
 
 - Open-source models via the HF Inference API
 - Get a token: <https://huggingface.co/settings/tokens>
+
+### FreeLLMAPI (self-hosted)
+
+- [freellmapi](https://github.com/tashfeenahmed/freellmapi) is an OpenAI-compatible proxy you run yourself that pools the free tiers of 16+ providers (Gemini, Groq, Cerebras, Mistral, and more) behind one endpoint
+- Deploy it first (Docker or Node), add your provider keys in its dashboard, and generate a unified `freellmapi-...` key on the Keys page
+- During `ultracode setup`, point ultracode at your instance URL (default `http://localhost:3001/v1`) and paste the unified key
+- Default model: `auto` (the proxy routes to whichever pooled provider is available); `ultracode models` lists the live catalog from your instance
+- Intended for personal experimentation — the upstream project offers no SLA
 
 ## Configuration file
 

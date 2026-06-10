@@ -208,6 +208,16 @@ PROVIDERS_INFO = {
             "meta-llama/llama-4-scout-17b-16e-instruct",
         ],
     },
+    "freellmapi": {
+        "name": "FreeLLMAPI (Self-hosted)",
+        "description": "Your own freellmapi proxy pooling free tiers of 16+ providers.",
+        "needs_key": True,
+        "key_url": "https://github.com/tashfeenahmed/freellmapi",
+        "default_model": "auto",
+        "models": [
+            "auto",
+        ],
+    },
 }
 
 
@@ -277,12 +287,15 @@ def create_provider_from_config(config: StoredConfig) -> LLMProvider:
         api_key = config.huggingface_api_key
     elif config.provider == "groq":
         api_key = config.groq_api_key
+    elif config.provider == "freellmapi":
+        api_key = config.freellmapi_api_key
 
     return create_provider(
         provider=config.provider,
         model=config.model,
         api_key=api_key,
         host=config.ollama_host if config.provider == "ollama" else None,
+        base_url=config.freellmapi_base_url if config.provider == "freellmapi" else None,
     )
 
 
@@ -304,20 +317,40 @@ def run_setup_wizard() -> StoredConfig:
     table.add_row("2", "Groq", "Cloud API, ultra-fast open models")
     table.add_row("3", "OpenRouter", "Cloud API, many models")
     table.add_row("4", "HuggingFace", "Cloud API, open models")
+    table.add_row("5", "FreeLLMAPI", "Self-hosted proxy, pooled free tiers")
     console.print(table)
     console.print()
 
-    choice = Prompt.ask("Select", choices=["1", "2", "3", "4"], default="1")
-    provider_map = {"1": "ollama", "2": "groq", "3": "openrouter", "4": "huggingface"}
+    choice = Prompt.ask("Select", choices=["1", "2", "3", "4", "5"], default="1")
+    provider_map = {
+        "1": "ollama",
+        "2": "groq",
+        "3": "openrouter",
+        "4": "huggingface",
+        "5": "freellmapi",
+    }
     provider = provider_map[choice]
     provider_info = PROVIDERS_INFO[provider]
     console.print(f"\n[green]✓[/green] {provider_info['name']}\n")
+
+    # freellmapi is self-hosted, so ask where the instance lives first.
+    freellmapi_base_url = "http://localhost:3001/v1"
+    if provider == "freellmapi":
+        console.print("[dim]freellmapi runs on your own machine/server.[/dim]")
+        console.print(f"[dim]Setup guide: {provider_info['key_url']}[/dim]\n")
+        freellmapi_base_url = Prompt.ask(
+            "Instance URL", default="http://localhost:3001/v1"
+        )
+        console.print()
 
     # Step 2: API Key
     api_key = None
     if provider_info["needs_key"]:
         console.print("[bold]Step 2: API Key[/bold]\n")
-        console.print(f"Get key: [link]{provider_info['key_url']}[/link]\n")
+        if provider == "freellmapi":
+            console.print("Generate a unified key in your freellmapi dashboard (Keys page).\n")
+        else:
+            console.print(f"Get key: [link]{provider_info['key_url']}[/link]\n")
 
         while True:
             api_key = Prompt.ask("API Key", password=True)
@@ -333,6 +366,11 @@ def run_setup_wizard() -> StoredConfig:
                 elif provider == "groq":
                     from codeagent.providers.groq import GroqProvider
                     GroqProvider(api_key=api_key).validate_api_key()
+                elif provider == "freellmapi":
+                    from codeagent.providers.freellmapi import FreeLLMAPIProvider
+                    FreeLLMAPIProvider(
+                        api_key=api_key, base_url=freellmapi_base_url
+                    ).validate_api_key()
                 console.print("[green]✓[/green] Valid\n")
                 break
             except ProviderConfigError as e:
@@ -377,14 +415,26 @@ def run_setup_wizard() -> StoredConfig:
             model = select_and_download_model()
     else:
         models = provider_info["models"]
+        if provider == "freellmapi" and api_key:
+            # Catalog depends on which keys the user loaded into their
+            # instance — ask it directly, keeping "auto" first.
+            from codeagent.providers.freellmapi import FreeLLMAPIProvider
+            live = FreeLLMAPIProvider(
+                api_key=api_key, base_url=freellmapi_base_url
+            ).fetch_models()
+            models = ["auto"] + [m for m in live if m != "auto"]
         for i, m in enumerate(models[:6], 1):
             marker = " [dim](recommended)[/dim]" if i == 1 else ""
             console.print(f"  {i}. {m}{marker}")
+        if len(models) > 6:
+            console.print(f"  [dim]... and {len(models) - 6} more (enter name directly)[/dim]")
         console.print()
 
         choice = Prompt.ask("Select", default="1")
         if choice.isdigit() and 1 <= int(choice) <= len(models):
             model = models[int(choice) - 1]
+        elif choice in models:
+            model = choice
         else:
             model = provider_info["default_model"]
 
@@ -397,6 +447,8 @@ def run_setup_wizard() -> StoredConfig:
         openrouter_api_key=api_key if provider == "openrouter" else None,
         huggingface_api_key=api_key if provider == "huggingface" else None,
         groq_api_key=api_key if provider == "groq" else None,
+        freellmapi_api_key=api_key if provider == "freellmapi" else None,
+        freellmapi_base_url=freellmapi_base_url,
     )
     manager = get_config_manager()
     manager.save(config)
@@ -853,13 +905,23 @@ def config_cmd(
         console.print(f"[green]✓[/green] Provider: {provider}")
         console.print(f"[green]✓[/green] Model: {cfg.model}")
 
-        if provider in ("openrouter", "huggingface", "groq") and old_provider == "ollama":
+        if provider == "freellmapi":
+            cfg.freellmapi_base_url = Prompt.ask(
+                "Instance URL", default=cfg.freellmapi_base_url
+            )
+
+        if (
+            provider in ("openrouter", "huggingface", "groq", "freellmapi")
+            and old_provider == "ollama"
+        ):
             console.print(f"\n[yellow]API key required[/yellow]")
             new_key = Prompt.ask("API key", password=True)
             if provider == "openrouter":
                 cfg.openrouter_api_key = new_key
             elif provider == "huggingface":
                 cfg.huggingface_api_key = new_key
+            elif provider == "freellmapi":
+                cfg.freellmapi_api_key = new_key
             else:
                 cfg.groq_api_key = new_key
 
@@ -878,6 +940,8 @@ def config_cmd(
                 cfg.huggingface_api_key = new_key
             elif cfg.provider == "groq":
                 cfg.groq_api_key = new_key
+            elif cfg.provider == "freellmapi":
+                cfg.freellmapi_api_key = new_key
             console.print("[green]✓[/green] API key updated")
 
     if provider or model or api_key:
@@ -898,6 +962,9 @@ def config_cmd(
             table.add_row("API Key", "✓ Set" if cfg.huggingface_api_key else "✗ Not set")
         elif cfg.provider == "groq":
             table.add_row("API Key", "✓ Set" if cfg.groq_api_key else "✗ Not set")
+        elif cfg.provider == "freellmapi":
+            table.add_row("API Key", "✓ Set" if cfg.freellmapi_api_key else "✗ Not set")
+            table.add_row("Instance URL", cfg.freellmapi_base_url)
 
         console.print(table)
         console.print()
@@ -928,7 +995,14 @@ def models(
             console.print(f"[red]Unknown provider: {target}[/red]")
             return
         console.print(f"\n[bold]{info['name']} Models:[/bold]\n")
-        for i, m in enumerate(info["models"], 1):
+        models_list = info["models"]
+        if target == "freellmapi" and cfg.freellmapi_api_key:
+            from codeagent.providers.freellmapi import FreeLLMAPIProvider
+            live = FreeLLMAPIProvider(
+                api_key=cfg.freellmapi_api_key, base_url=cfg.freellmapi_base_url
+            ).fetch_models()
+            models_list = ["auto"] + [m for m in live if m != "auto"]
+        for i, m in enumerate(models_list, 1):
             marker = " [cyan](current)[/cyan]" if m == cfg.model else ""
             console.print(f"  {i}. {m}{marker}")
 
